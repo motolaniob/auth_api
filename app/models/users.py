@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 from uuid import UUID as pyUUID
-from datetime import datetime
+from datetime import datetime, timezone
 from ..database import Base
 from sqlalchemy import String, DateTime, ForeignKey, text
 
@@ -16,4 +16,4 @@ class User(Base):
     mfa_enabled: Mapped[bool] = mapped_column(nullable=False, default=False)
     mfa_secret: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), onupdate=datetime.timezone.utcnow, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), onupdate= lambda: datetime.now(timezone.utc), server_default=text("now()"))
