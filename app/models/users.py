@@ -17,3 +17,4 @@ class User(Base):
     mfa_secret: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), onupdate= lambda: datetime.now(timezone.utc), server_default=text("now()"))
+    roles: Mapped[list["Role"]] = relationship(back_populates="users", secondary="user_roles")
