@@ -3,10 +3,10 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from pathlib import Path
 from jose import jwt
+from app.config import settings
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-private_key = Path(BASE_DIR /"keys"/ "private_key.pem").read_text()
-public_key = Path(BASE_DIR /"keys"/ "public_key.pem").read_text()
+private_key = Path(settings.keys_directory / "private_key.pem").read_text()
+public_key = Path(settings.keys_directory / "public_key.pem").read_text()
 ph = PasswordHasher()
 
 def hash_password(password: str) -> str:
