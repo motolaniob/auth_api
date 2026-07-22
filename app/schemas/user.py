@@ -15,7 +15,7 @@ class UserCreate(BaseModel):
             raise ValueError('Password has been breached')
         return v
     
-class UserOut(BaseModel):
+class UserResponse(BaseModel):
     id: UUID
     email: EmailStr
     created_at: datetime

@@ -11,6 +11,7 @@ from jose.exceptions import ExpiredSignatureError
 import pytest
 import hashlib
 from unittest.mock import patch, Mock
+import requests
 
 
 def test_hash_password_produces_different_hash_than_input():
