@@ -2,12 +2,15 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.users import User
+from app.models.refresh_token import RefreshToken
 from app.schemas.user import UserCreate, UserResponse
 from app.schemas.auth import Token, LoginRequest
 from app.core.security import (
     hash_password,
     verify_password,
-    create_access_token)
+    create_access_token,
+    generate_refresh_token,
+    hash_refresh_token)
 
 router = APIRouter()
 
@@ -39,4 +42,10 @@ def login(login_data: LoginRequest, db: Session = Depends(get_db)):
         )
     
     access_token = create_access_token({"sub": str(user.id)})
-    return {"access_token": access_token, "token_type": "bearer"}
+    refresh_token = generate_refresh_token()
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    refresh_token_row = RefreshToken(user_id = user.id, token_hash = hash_refresh_token(refresh_token), expires_at = expires_at, revoked = False)
+    db.add(refresh_token_row)
+    db.commit()
+    db.refresh(refresh_token_row)
+    return {"access_token": access_token, "token_type": "bearer", "refresh_token": refresh_token}

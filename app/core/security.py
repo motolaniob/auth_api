@@ -6,6 +6,7 @@ from jose import jwt
 from app.config import settings
 import hashlib
 import requests
+import secrets
 
 private_key = Path(settings.keys_directory / "private_key.pem").read_text()
 public_key = Path(settings.keys_directory / "public_key.pem").read_text()
@@ -49,3 +50,9 @@ def check_password_breach(password: str) -> int:
         if suffix == hash_suffix:
             return int(count)
     return 0
+
+def generate_refresh_token() -> str:
+    return secrets.token_urlsafe(64)
+
+def hash_refresh_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexidigest()
