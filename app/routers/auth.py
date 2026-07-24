@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.users import User
 from app.models.refresh_token import RefreshToken
 from app.schemas.user import UserCreate, UserResponse
-from app.schemas.auth import Token, LoginRequest
+from app.schemas.auth import RefreshRequest, Token, LoginRequest
 from app.core.security import (
     hash_password,
     verify_password,
@@ -39,7 +39,6 @@ def login(login_data: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
-            headers={"WWW-Authenticate": "Bearer"},
         )
     
     access_token = create_access_token({"sub": str(user.id)})
@@ -52,7 +51,7 @@ def login(login_data: LoginRequest, db: Session = Depends(get_db)):
     return {"access_token": access_token, "token_type": "bearer", "refresh_token": refresh_token}
 
 @router.post("/refresh", response_model=Token)
-def refresh(refresh_input: Token, db: Session = Depends(get_db)):
+def refresh(refresh_input: RefreshRequest, db: Session = Depends(get_db)):
     refresh_token_hash = hash_refresh_token(refresh_input.refresh_token)
     refresh_token_row = db.query(RefreshToken).filter(RefreshToken.token_hash == refresh_token_hash).first()
     
@@ -60,7 +59,6 @@ def refresh(refresh_input: Token, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired refresh token",
-            headers={"WWW-Authenticate": "Bearer"},
         )
     
     user = db.query(User).filter(User.id == refresh_token_row.user_id).first()
@@ -87,15 +85,14 @@ def refresh(refresh_input: Token, db: Session = Depends(get_db)):
     return {"access_token": access_token, "token_type": "bearer", "refresh_token": new_refresh_token}
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-def logout(refresh_input: Token, db: Session = Depends(get_db)):
-    refresh_token_hash = hash_refresh_token(refresh_input.refresh_token)
+def logout(logout_input: RefreshRequest, db: Session = Depends(get_db)):
+    refresh_token_hash = hash_refresh_token(logout_input.refresh_token)
     refresh_token_row = db.query(RefreshToken).filter(RefreshToken.token_hash == refresh_token_hash).first()
     
     if not refresh_token_row or refresh_token_row.revoked:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or already revoked refresh token",
-            headers={"WWW-Authenticate": "Bearer"},
         )
     
     # Revoke the refresh token
