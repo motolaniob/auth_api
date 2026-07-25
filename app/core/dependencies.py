@@ -29,3 +29,25 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         raise credentials_exception
     
     return user
+
+def require_role(required_role: str):
+    def role_checker(current_user: User = Depends(get_current_user), payload: dict = Depends(get_token_payload)) -> User:
+        token_roles = payload.get("roles", [])
+        if required_role not in token_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to perform this action."
+            )
+        return current_user
+    return role_checker
+
+def get_token_payload(token: str = Depends(oauth2_scheme)) -> dict:
+    try:
+        payload = decode_access_token(token)
+        return payload
+    except (ExpiredSignatureError, JWTError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )   

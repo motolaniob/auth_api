@@ -7,6 +7,8 @@ from app.config import settings
 import hashlib
 import requests
 import secrets
+from sqlalchemy.orm import Session
+from app.models.refresh_token import RefreshToken
 
 private_key = Path(settings.keys_directory / "private_key.pem").read_text()
 public_key = Path(settings.keys_directory / "public_key.pem").read_text()
@@ -55,4 +57,8 @@ def generate_refresh_token() -> str:
     return secrets.token_urlsafe(64)
 
 def hash_refresh_token(token: str) -> str:
-    return hashlib.sha256(token.encode("utf-8")).hexidigest()
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+def revoke_all_refresh_tokens(user_id: str, db: Session):
+    db.query(RefreshToken).filter(RefreshToken.user_id == user_id).update({"revoked": True})
+    db.commit()

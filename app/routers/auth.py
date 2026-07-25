@@ -44,7 +44,7 @@ def login(login_data: LoginRequest, db: Session = Depends(get_db)):
             detail="Invalid email or password",
         )
     
-    access_token = create_access_token({"sub": str(user.id)})
+    access_token = create_access_token({"sub": str(user.id), "roles": [role.name for role in user.roles]})
     refresh_token = generate_refresh_token()
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
     refresh_token_row = RefreshToken(user_id = user.id, token_hash = hash_refresh_token(refresh_token), expires_at = expires_at, revoked = False)
