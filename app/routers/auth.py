@@ -3,6 +3,7 @@ from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.users import User
+from app.models.role import Role
 from app.models.refresh_token import RefreshToken
 from app.schemas.user import UserCreate, UserResponse
 from app.schemas.auth import RefreshRequest, Token, LoginRequest
@@ -29,7 +30,9 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    
+    user_role = db.query(Role).filter(Role.name == "user").first()
+    new_user.roles.append(user_role)
+    db.commit()
     return new_user
 
 @router.post("/login", response_model=Token)
