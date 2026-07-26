@@ -31,11 +31,5 @@ def client(db_session):
 
 @pytest.fixture(autouse=True)
 def mock_hibp_check():
-    """Prevent every test from hitting the real HIBP API — always report 'not breached'."""
-    with patch("app.core.security.check_password_breach", return_value=0):
-        yield
-
-@pytest.fixture(autouse=True)
-def mock_hibp_check():
     with patch("app.schemas.user.check_password_breach", return_value=0):
         yield
