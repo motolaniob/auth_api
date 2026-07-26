@@ -1,6 +1,5 @@
 def test_signup_creates_user(client):
     response = client.post("/auth/signup", json={"email": "test@example.com", "password": "Xk9$mQ2vL8pT4wZ1"})
-    print("RESPONSE BODY:", response.json())
     assert response.status_code == 201
     data = response.json()
     assert data["email"] == "test@example.com"
