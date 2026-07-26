@@ -41,6 +41,14 @@ def require_role(required_role: str):
         return current_user
     return role_checker
 
+def require_verified(current_user: User = Depends(get_current_user)) -> User:
+    if not current_user.is_verified:
+        raise HTTPException(
+            status_code = status.HTTP_403_FORBIDDEN,
+            detail="Please verify your email to access this feature"
+        )
+    return current_user
+
 def get_token_payload(token: str = Depends(oauth2_scheme)) -> dict:
     try:
         payload = decode_access_token(token)
