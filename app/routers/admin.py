@@ -1,5 +1,5 @@
 from app.core.security import revoke_all_refresh_tokens
-from app.core.dependencies import require_role
+from app.core.dependencies import require_role, require_verified
 from app.models.role import Role
 from app.models.users import User
 from app.schemas.user import UserResponse
@@ -18,7 +18,8 @@ def list_all_users(
     return db.query(User).all()
 
 @router.patch("/users/{user_id}/roles", response_model=UserResponse)
-def update_user_roles(user_id:str, new_role_names:list[str], db: Session = Depends(get_db), current_user: User = Depends(require_role("admin"))):
+def update_user_roles(user_id:str, new_role_names:list[str], db: Session = Depends(get_db), 
+    current_user: User = Depends(require_role("admin")), _verified: User = Depends(require_verified)):
     """
     Update the roles of a user.
     """

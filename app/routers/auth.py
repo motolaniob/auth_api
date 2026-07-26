@@ -7,6 +7,7 @@ from app.models.role import Role
 from app.models.refresh_token import RefreshToken
 from app.schemas.user import UserCreate, UserResponse
 from app.schemas.auth import RefreshRequest, Token, LoginRequest
+from app.models.email_verification_token import EmailVerificationToken
 from app.core.security import (
     hash_password,
     verify_password,
@@ -33,6 +34,20 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
     user_role = db.query(Role).filter(Role.name == "user").first()
     new_user.roles.append(user_role)
     db.commit()
+
+    # Create an email verification token for the new user
+    verification_token = generate_refresh_token()  # Reusing method from refresh tokens to generate a random token
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=24)  # Token expires in 24 hours
+    token_row = EmailVerificationToken(
+        user_id=new_user.id,
+        token_hash=hash_refresh_token(verification_token)# Reusing method from refresh tokens to has the random token that was created,
+        expires_at=expires_at,
+        is_used=False
+    )
+    db.add(token_row)
+    db.commit()
+    #TO DO: Replace with real email service (see README)
+    print(f"Verification link: http://localhost:8000/auth/verify-email?token={verification_token}")
     return new_user
 
 @router.post("/login", response_model=Token)
@@ -104,3 +119,37 @@ def logout(logout_input: RefreshRequest, db: Session = Depends(get_db)):
     db.commit()
     
     return None
+
+@router.get("/verify-email")
+def verify_email(token:str, db: Session = Depends(get_db)):
+    token_hash = hash_refresh_token(token) #Reusing refresh token module to hash the verification token
+    token_row = db.query(EmailVerificationToken).filter(EmailVerificationToken.token_hash == token_hash).first()
+    if not token_row or token_row.is_used or token_row.expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail = "Invalid or expired verification code")
+    user = db.query(User).filter(User.id == token_row.user_id).first()
+    user.is_verified = True
+    token_row.is_used = True
+    db.commit()
+
+    return {"message": "Email verified successfully"}
+
+@router.post("/resend-verification")
+def resend_verification(request: ResendVerificationRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == request.email).first()
+    if not user or user.is_verified:
+        return {"message": "If this account exists and is unverified, a new link has been sent to you"}
+
+    db.query(EmailVerificationToken).filter(EmailVerificationToken.user_id == user.id, EmailVerificationToken.is_used == False,
+    ).update({"is_used": True})
+
+    verification_token = generate_refresh_token() #reusing refresh token module to generate random token
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+    token_row = EmailVerificationToken(
+        user_id=user.id,
+        token_hash = hash_refresh_token(verification_token),
+        expires_at = expires_at
+    )
+    db.add(token_row)
+    db.commit()   
+    print(f"Verification link: http://localhost:8000/auth/verify-email?token={verification_token}")#TO DO: Wire up to real email sender
+    return {"message": "If this account exists and is unverified, a new link has been sent to you"}
