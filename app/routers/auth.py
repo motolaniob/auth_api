@@ -153,3 +153,44 @@ def resend_verification(request: ResendVerificationRequest, db: Session = Depend
     db.commit()   
     print(f"Verification link: http://localhost:8000/auth/verify-email?token={verification_token}")#TO DO: Wire up to real email sender
     return {"message": "If this account exists and is unverified, a new link has been sent to you"}
+
+@router.post("/forgot-password")
+def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == request.email).first()
+    if not user:
+        return ("message": "If account exists, a password reset link has been sent to your email address")
+
+    db.query(PasswordResetToken).filter(
+        PassowrdResetToken.user_id == user.id,
+        PasswordResetToken.is_used == False,
+    ).update({"is_used": True})
+
+    reset_token = generate_refresh_token #reusing refresh token model for generating random token
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+    token_row = PasswordResetToken(
+        user_id = user.id,
+        token_hash = hash_refresh_token(reset_token),
+        expires_at=expires_at,
+    )
+    db.add(token_row)
+    db.commit()
+
+    #TO DO: Hook up to real email  service
+    print(f"Password reset link: http://localhost:8000/reset-password?token={reset_token}")
+
+    return {"message": "If account exists, a password reset link has been sent to your email address"}
+
+@router.post("/reset-password")
+def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db):
+    token_hash = hash_refresh_token(request.token))
+    token_row = db.query(PasswordResetToken).filter(PasswordResetToken.token_hash == token_hash)
+    if not token_row or token_row.is_used or token_row.expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code = 400, detail = "Invalid or expired reset token")
+    
+    user = db.query(User).filter(User.id==token_row.user_id).first()
+    user.hashed_password = hash_password(request.new_password)
+    token_row.is_used = True
+
+    db.query(RefreshToken).filter(RefreshToken.user_id == user.id,RefreshToken.revoked == False,).update({"revoked"==True})
+    db.commit()
+    return {"message": "Password reset successfully"}
