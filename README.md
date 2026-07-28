@@ -1,53 +1,68 @@
-# Auth API
+# auth_api
 
-A standalone, full-featured authentication API — built to be plugged into any application instead of building auth from scratch. 
+A full-featured authentication API built as a portfolio project, demonstrating production-style auth patterns: JWT with asymmetric signing, refresh token rotation, RBAC, email verification, password reset, and (in progress) TOTP-based MFA.
 
-## Stack
-- **FastAPI** — REST framework
-- **PostgreSQL** — primary datastore (via SQLAlchemy + Alembic migrations)
-- **Redis** — planned for rate limiting and audit logging (not yet wired in)
-- **Docker Compose** — Postgres + Redis running locally
-- **Argon2** — password hashing
-- **JWT (RS256)** — access tokens
-- **pytest** — testing
+## Tech Stack
 
-## Features implemented so far
+- **FastAPI** — API framework
+- **PostgreSQL** — primary datastore
+- **Redis** — planned for rate limiting and JWT blacklist (see Roadmap)
+- **Docker Compose** — local development environment
+- **argon2-cffi** — password hashing
+- **pydantic-settings** — configuration management
 
-### Authentication
-- `POST /auth/signup` — create an account (email + password)
-  - Password requires a minimum length (NIST 800-63B guidance — no forced character-class rules)
-  - Checked against the Have I Been Pwned breach database via k-anonymity (only a partial hash prefix is ever sent externally)
-  - Password stored as an Argon2 hash — never in plaintext
-- `POST /auth/login` — authenticate, receive an access token + refresh token
-  - Returns an identical, generic error for both "no such account" and "wrong password," to prevent attackers from enumerating registered emails
-- `POST /auth/refresh` — exchange a valid refresh token for a new access + refresh token pair
-  - Refresh tokens rotate on every use — the old one is immediately revoked
-- `POST /auth/logout` — revoke a refresh token, ending that session's ability to silently renew
+## Features
 
-### Authorization (RBAC)
-- Users are assigned a role (`user` by default) at signup via a proper many-to-many `User`↔`Role` relationship
-- Roles are embedded directly in the JWT payload
-- `GET /admin/users` — admin-only, lists all users
-- `PATCH /admin/users/{user_id}/roles` — admin-only, changes a user's roles and forces re-authentication by revoking their existing refresh tokens
+### Implemented
 
-### Route protection
-- `GET /users/me` — returns the authenticated user's profile; requires a valid bearer access token
+- **Signup & Login** — Argon2 password hashing, breach-checking against Have I Been Pwned (HIBP) at signup, JWT (RS256) issuance on login
+- **Refresh Token Rotation** — `/auth/refresh` and `/auth/logout`, with revocation support and hashed storage of refresh tokens
+- **Protected Routes** — `get_current_user` dependency validates JWTs and exposes the authenticated user to route handlers (e.g. `GET /users/me`)
+- **Role-Based Access Control (RBAC)** — roles embedded directly in the JWT payload (rather than a fresh DB lookup per request); includes `revoke_all_refresh_tokens` and an admin `update_user_roles` endpoint to limit staleness after a role change
+- **Email Verification** — partial-access model: unverified users can still log in, but a `require_verified` dependency gates specific sensitive routes rather than blocking all access
+- **Password Reset** — `forgot-password` / `reset-password` flow; resetting a password revokes all existing refresh tokens for that user
 
-## Design decisions worth knowing
+### In Progress
 
-- **UUID primary keys**, not auto-incrementing integers — avoids ID enumeration attacks
-- **Access tokens are stateless JWTs signed with RS256** — the private key signs, the public key verifies, allowing other services to validate tokens without holding the signing secret
-- **Refresh tokens are opaque random strings, stored server-side only as a hash** — never as plaintext, so a database leak alone doesn't expose usable tokens
-- **Roles are embedded in the access token** rather than looked up fresh on every request. This is faster (no extra DB query per request) but means a role change doesn't take effect until the user's current access token expires (≤15 min) or they re-authenticate. Changing a user's roles via the admin endpoint mitigates this by revoking their refresh tokens, forcing a fresh login that picks up the new roles — but the *current* access token remains valid for its remaining lifetime. A Redis-backed token blacklist (planned) would close this gap for instant revocation.
-- **Generic, identical error messages** across all authentication failure paths (login, token validation) — deliberately avoids leaking *why* an attempt failed.
+- **MFA (TOTP)** — time-based one-time password support via an authenticator app:
+  - Enrollment endpoint generates a TOTP secret and provisioning URI/QR code
+  - Confirm-enrollment endpoint validates a code before enabling MFA
+  - Login flow issues an intermediate "MFA pending" token when MFA is enabled, exchanged for full access/refresh tokens after a valid TOTP code
+  - Disable-MFA requires re-verification (TOTP code or password), not a bare toggle
+  - Optional: hashed, one-time recovery codes generated at enrollment
 
-## Known limitations (by design, for now)
-- Logout/role changes don't instantly invalidate an already-issued access token — only refresh tokens are revoked immediately. See above.
-- No rate limiting yet on auth endpoints (planned, Redis-backed).
-- No email verification or password reset flow yet.
-- No MFA or OAuth social login yet.
+## Roadmap
 
-## Project status
-Core auth (signup, login, refresh rotation, logout, route protection, RBAC) is complete and manually verified end-to-end, including direct database inspection. Automated test coverage for the full endpoint surface (Steps 3–6) is in progress.
+Remaining steps from the original 12-step project plan:
 
- 
+- [ ] **MFA / TOTP** (in progress — see above)
+- [ ] **OAuth** — third-party login support
+- [ ] **Redis-backed rate limiting**
+- [ ] **Session management**
+- [ ] **Audit logging**
+- [ ] **Redis-backed JWT blacklist** — tracks a `jti` claim per token so that logout, role changes, and password resets can invalidate the current access token instantly, rather than waiting out its ~15-minute expiry (a current limitation, since roles/verification status live in the JWT payload itself)
+
+## Design Notes
+
+- **UUID primary keys** throughout
+- **Tokens are stored hashed**, never in plaintext
+- **`event_metadata`** column naming (instead of `metadata`) to avoid conflicts with SQLAlchemy's reserved attribute
+- **`hashed_password` is nullable** to support OAuth-only users once OAuth is added
+- Password hashing uses **argon2-cffi** over passlib (unmaintained) or raw bcrypt
+
+## Testing
+
+Test suite (`pytest`) covers signup/login, refresh/logout, protected routes, and RBAC, with an isolated test database, role-seeding fixtures, and an autouse HIBP mock in `conftest.py`. Tests for email verification and password reset are in progress.
+
+## Local Development
+
+Local environment runs via Docker Compose (Postgres + Redis), with credentials managed through a `.env` file and loaded via a `pydantic-settings` `Settings` class in `app/config.py`.
+
+```bash
+docker-compose up -d
+# API available at http://localhost:8000/docs
+```
+
+## Status
+
+Actively developed as of July 2026. Steps 1–8 of the original project plan are complete; MFA (Step 9) is the current focus, followed by OAuth, rate limiting, session management, audit logging, and the JWT blacklist.

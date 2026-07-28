@@ -21,3 +21,7 @@ class ForgotPasswordRequest(BaseModel):
 class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str
+
+class MFAChallengeResponse(BaseModel):
+    mfa_required: bool = True
+    challenge_token: str

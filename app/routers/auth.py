@@ -7,7 +7,7 @@ from app.models.role import Role
 from app.models.refresh_token import RefreshToken
 from app.models.password_reset_token import PasswordResetToken
 from app.schemas.user import UserCreate, UserResponse
-from app.schemas.auth import RefreshRequest, Token, LoginRequest, ResendVerificationRequest, ForgotPasswordRequest, ResetPasswordRequest
+from app.schemas.auth import RefreshRequest, Token, LoginRequest, ResendVerificationRequest, ForgotPasswordRequest, ResetPasswordRequest, MFAChallengeResponse
 from app.models.email_verification_token import EmailVerificationToken
 from app.core.security import (
     hash_password,
@@ -49,7 +49,7 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
     print(f"Verification link: http://localhost:8000/auth/verify-email?token={verification_token}")
     return new_user
 
-@router.post("/login", response_model=Token)
+@router.post("/login", response_model=Token | MFAChallengeResponse)
 def login(login_data: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == login_data.email).first()
     if not user or not user.hashed_password or not verify_password(user.hashed_password, login_data.password):
@@ -164,7 +164,7 @@ def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db
         PasswordResetToken.is_used == False,
     ).update({"is_used": True})
 
-    reset_token = generate_refresh_token #reusing refresh token model for generating random token
+    reset_token = generate_refresh_token() #reusing refresh token model for generating random token
     expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
     token_row = PasswordResetToken(
         user_id = user.id,
