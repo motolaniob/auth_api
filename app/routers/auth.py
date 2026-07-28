@@ -5,8 +5,9 @@ from app.database import get_db
 from app.models.users import User
 from app.models.role import Role
 from app.models.refresh_token import RefreshToken
+from app.models.password_reset_token import PasswordResetToken
 from app.schemas.user import UserCreate, UserResponse
-from app.schemas.auth import RefreshRequest, Token, LoginRequest
+from app.schemas.auth import RefreshRequest, Token, LoginRequest, ResendVerificationRequest, ForgotPasswordRequest, ResetPasswordRequest
 from app.models.email_verification_token import EmailVerificationToken
 from app.core.security import (
     hash_password,
@@ -158,10 +159,10 @@ def resend_verification(request: ResendVerificationRequest, db: Session = Depend
 def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == request.email).first()
     if not user:
-        return ("message": "If account exists, a password reset link has been sent to your email address")
+        return {"message": "If account exists, a password reset link has been sent to your email address"}
 
     db.query(PasswordResetToken).filter(
-        PassowrdResetToken.user_id == user.id,
+        PasswordResetToken.user_id == user.id,
         PasswordResetToken.is_used == False,
     ).update({"is_used": True})
 
@@ -181,16 +182,16 @@ def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db
     return {"message": "If account exists, a password reset link has been sent to your email address"}
 
 @router.post("/reset-password")
-def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db):
-    token_hash = hash_refresh_token(request.token))
-    token_row = db.query(PasswordResetToken).filter(PasswordResetToken.token_hash == token_hash)
+def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db)):
+    token_hash = hash_refresh_token(request.token)
+    token_row = db.query(PasswordResetToken).filter(PasswordResetToken.token_hash == token_hash).first()
     if not token_row or token_row.is_used or token_row.expires_at < datetime.now(timezone.utc):
         raise HTTPException(status_code = 400, detail = "Invalid or expired reset token")
     
     user = db.query(User).filter(User.id==token_row.user_id).first()
     user.hashed_password = hash_password(request.new_password)
     token_row.is_used = True
-
-    db.query(RefreshToken).filter(RefreshToken.user_id == user.id,RefreshToken.revoked == False,).update({"revoked"==True})
+    #After old password is reset, revoke all refresh tokens. 
+    db.query(RefreshToken).filter(RefreshToken.user_id == user.id,RefreshToken.revoked == False,).update({"revoked":True})
     db.commit()
     return {"message": "Password reset successfully"}
