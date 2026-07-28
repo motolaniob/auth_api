@@ -39,9 +39,7 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
     # Create an email verification token for the new user
     verification_token = generate_refresh_token()  # Reusing method from refresh tokens to generate a random token
     expires_at = datetime.now(timezone.utc) + timedelta(hours=24)  # Token expires in 24 hours
-    token_row = EmailVerificationToken(
-        user_id=new_user.id,
-        token_hash=hash_refresh_token(verification_token)# Reusing method from refresh tokens to has the random token that was created,
+    token_row = EmailVerificationToken(user_id=new_user.id,token_hash=hash_refresh_token(verification_token),# Reusing method from refresh tokens to has the random token that was created
         expires_at=expires_at,
         is_used=False
     )
