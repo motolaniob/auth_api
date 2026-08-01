@@ -1,5 +1,5 @@
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
 from app.database import Base, get_db
@@ -7,6 +7,16 @@ from app.config import settings
 from app.main import app
 from app.models.role import Role
 from unittest.mock import patch
+
+main_db = settings.database_url
+temp_engine = create_engine(main_db)
+with temp_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+    db_name = "auth_db_test"
+    exists = conn.execute(
+        text("SELECT 1 FROM pg_database WHERE datname = :name"),{"name":db_name},).scalar()
+    if not exists:
+        conn.execute(text(f'CREATE DATABASE "{db_name}"'))
+
 engine = create_engine(settings.test_database_url)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
