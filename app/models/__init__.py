@@ -5,3 +5,4 @@ from .refresh_token import RefreshToken
 from .audit_logs import AuditLog
 from .email_verification_token import EmailVerificationToken
 from .password_reset_token import PasswordResetToken
+from .recovery_code import RecoveryCode
