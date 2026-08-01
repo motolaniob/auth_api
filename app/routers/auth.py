@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
+
+from app.core.dependencies import get_current_user
 from app.database import get_db
 from app.models.users import User
 from app.models.role import Role
@@ -15,6 +17,7 @@ from app.core.security import (
     create_access_token,
     generate_refresh_token,
     hash_refresh_token)
+import pyotp
 
 router = APIRouter()
 
@@ -193,3 +196,10 @@ def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db))
     db.query(RefreshToken).filter(RefreshToken.user_id == user.id,RefreshToken.revoked == False,).update({"revoked":True})
     db.commit()
     return {"message": "Password reset successfully"}
+
+@router.post("/mfa/setup")
+def setup_mfa(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    secret = pyotp.random_base32()
+    current_user.mfa_secret = secret
+    db.commit()
+

@@ -18,18 +18,17 @@ def test_verify_email_with_valid_token(client, db_session, capsys):
     client.post("/auth/signup", json={"email": "verifyflow@example.com", "password": "Xk9$mQ2vL8pT4wZ1"})
     captured = capsys.readouterr()
     token = captured.out.split("token=")[1].split()[0].strip()
-
     response = client.get(f"/auth/verify-email?token={token}")
     assert response.status_code == 200
-
     user = db_session.query(User).filter(User.email == "verifyflow@example.com").first()
     assert user.is_verified is True
+    token_row = db_session.query(EmailVerificationToken).filter(EmailVerificationToken.user_id == user.id).first()
+    assert token_row.is_used is True
 
 def test_verify_email_rejects_reused_token(client, capsys):
     client.post("/auth/signup", json={"email": "reuse@example.com", "password": "Xk9$mQ2vL8pT4wZ1"})
     captured = capsys.readouterr()
     token = captured.out.split("token=")[1].split()[0].strip()
-
     client.get(f"/auth/verify-email?token={token}")
     response = client.get(f"/auth/verify-email?token={token}")
     assert response.status_code == 400

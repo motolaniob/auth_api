@@ -15,22 +15,24 @@ def test_forgot_password_creates_token_for_real_user(client, db_session):
     user = db_session.query(User).filter(User.email == "resetme@example.com").first()
     token_row = db_session.query(PasswordResetToken).filter(PasswordResetToken.user_id == user.id).first()
     assert token_row is not None
+    assert token_row.is_used is False
 
-def test_reset_password_full_flow(client, capsys): 
+def test_reset_password_full_flow(client, capsys,db_session):
     _signup(client, "fullflow@example.com", "OldPassw0rd!9zK")
     capsys.readouterr()  # discard the signup verification-email print
     client.post("/auth/forgot-password", json={"email": "fullflow@example.com"})
     captured = capsys.readouterr()
     token = captured.out.split("token=")[1].split()[0].strip()
-
     reset_response = client.post("/auth/reset-password", json={"token": token, "new_password": "NewPassw0rd!7qR"})
     assert reset_response.status_code == 200
-
     old_login = client.post("/auth/login", json={"email": "fullflow@example.com", "password": "OldPassw0rd!9zK"})
     assert old_login.status_code == 401
-
     new_login = client.post("/auth/login", json={"email": "fullflow@example.com", "password": "NewPassw0rd!7qR"})
     assert new_login.status_code == 200
+    user = db_session.query(User).filter(User.email == "fullflow@example.com").first()
+    token_row = db_session.query(PasswordResetToken).filter(PasswordResetToken.user_id == user.id).first()
+    assert token_row is not None
+    assert token_row.is_used is True
 
 def test_reset_password_rejects_reused_token(client, capsys):
     _signup(client, "reusereset@example.com", "OldPassw0rd!9zK")
@@ -51,6 +53,5 @@ def test_reset_password_revokes_existing_refresh_tokens(client, capsys):
     captured = capsys.readouterr()  
     token = captured.out.split("token=")[1].split()[0].strip()
     client.post("/auth/reset-password", json={"token": token, "new_password": "NewPassw0rd!7qR"})
-
     refresh_attempt = client.post("/auth/refresh", json={"refresh_token": old_refresh_token})
     assert refresh_attempt.status_code == 401
