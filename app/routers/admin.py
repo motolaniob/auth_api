@@ -2,6 +2,7 @@ from app.core.security import revoke_all_refresh_tokens
 from app.core.dependencies import require_role, require_verified
 from app.models.role import Role
 from app.models.users import User
+from app.models.recovery_code import RecoveryCode
 from app.schemas.user import UserResponse
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -48,3 +49,16 @@ def update_user_roles(user_id:str, new_role_names:list[str], db: Session = Depen
     revoke_all_refresh_tokens(user.id, db)
     
     return user
+
+@router.post("/users/{user_id}/mfa/disable")
+def admin_disable_mfa(user_id: str, current_user: User = Depends(require_role("admin")), db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id== uuid.UUID(user_id)).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail = "User not found."
+        )
+    user.mfa_enabled = False
+    user.mfa_secret = None
+    db.query(RecoveryCode).filter(RecoveryCode.user_id == uuid.UUID(user_id)).delete()
+    db.commit()
+    return {"message": "MFA is disabled"}

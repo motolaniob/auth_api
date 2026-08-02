@@ -22,9 +22,16 @@ class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str
 
+class MFADisableRequest(BaseModel):
+    code: str
+
 class MFAChallengeResponse(BaseModel):
     mfa_required: bool = True
     challenge_token: str
 
 class MFAVerifyRequest(BaseModel):
-    code: st
+    code: str
+
+class MFALoginVerifyRequest(BaseModel):
+    challenge_token: str
+    code: str

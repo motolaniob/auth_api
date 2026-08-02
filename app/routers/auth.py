@@ -1,23 +1,25 @@
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, require_verified
 from app.database import get_db
-from app.models import recovery_code, User
 from app.models.users import User
 from app.models.role import Role
 from app.models.refresh_token import RefreshToken
 from app.models.password_reset_token import PasswordResetToken
+from app.models.recovery_code import RecoveryCode
 from app.schemas.user import UserCreate, UserResponse
-from app.schemas.auth import RefreshRequest, Token, LoginRequest, ResendVerificationRequest, ForgotPasswordRequest, ResetPasswordRequest, MFAChallengeResponse, MFAVerifyRequest
+from app.schemas.auth import RefreshRequest, Token, LoginRequest, ResendVerificationRequest, ForgotPasswordRequest, ResetPasswordRequest, MFAChallengeResponse, MFAVerifyRequest, MFALoginVerifyRequest, MFADisableRequest
 from app.models.email_verification_token import EmailVerificationToken
 from app.core.security import (
     hash_password,
     verify_password,
     create_access_token,
     generate_refresh_token,
-    hash_refresh_token)
+    hash_refresh_token, decode_access_token)
 import pyotp
 
 router = APIRouter()
@@ -201,26 +203,69 @@ def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db))
     return {"message": "Password reset successfully"}
 
 @router.post("/mfa/setup")
-def setup_mfa(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def setup_mfa(current_user: User = Depends(get_current_user), db: Session = Depends(get_db), _verified: User = Depends(require_verified)):
     secret = pyotp.random_base32()
     current_user.mfa_secret = secret
     db.commit()
 
     provisioning_url = pyotp.totp.TOTP(secret).provisioning_uri(
-        name="current_user.email",
+        name=current_user.email,
         issuer_name = "AUTH_API"
     )
-    recovery_codes =[generate_refresh_token()[0:10] for _ in range(8)]
+    recovery_codes =[generate_refresh_token()[0:10] for _ in range(8)] #reusing refresh token function to generate random 10 digit recovery codes
     for code in recovery_codes:
         db.add(RecoveryCode(user_id=current_user.id, code_hash=hash_refresh_token(code)))
         db.commit()
     return {"secret": secret, "recovery_codes": recovery_codes, "provisioning_url": provisioning_url}
 
+@router.post("/mfa/disable")
+def disable_mfa(request: MFADisableRequest,current_user: User = Depends(get_current_user), db: Session = Depends(get_db), _verified: User = Depends(require_verified)):
+    totp = pyotp.totp.TOTP(current_user.mfa_secret)
+    if not totp.verify(request.code):
+        raise HTTPException(status_code = 400, detail = "Invalid code")
+    current_user.mfa_enabled = False
+    current_user.mfa_secret = None
+    db.query(RecoveryCode).filter(RecoveryCode.user_id == current_user.id).delete()
+    db.commit()
+    return {"message": "MFA is disabled"}
+
 @router.post("/mfa/verify-setup")
-def verify_mfa_setup(request:MFAVerifyRequest ,current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def verify_mfa_setup(request:MFAVerifyRequest ,current_user: User = Depends(get_current_user), db: Session = Depends(get_db), _verified: User = Depends(require_verified)):
     totp = pyotp.TOTP(current_user.mfa_secret)
     if not totp.verify(request.code):
         raise HTTPException(status_code = 400, detail = "Invalid code")
     current_user.mfa_enabled = True
     db.commit()
     return {"message": "MFA is enabled"}
+
+@router.post("/mfa/login-verify")
+def mfa_login_verify(request: MFALoginVerifyRequest, db: Session = Depends(get_db)):
+    payload = decode_access_token(request.challenge_token)
+    if not payload.get("mfa_pending"):
+        raise HTTPException(status_code = 400, detail = "Invalid challenge token")
+    user = db.query(User).filter(User.id == uuid.UUID(payload["sub"])).first()
+    if not user:
+        raise HTTPException(status_code = 401, detail = "Invalid challenge token")
+    totp = pyotp.TOTP(user.mfa_secret)
+
+    if not totp.verify(request.code):
+        #fall back to recovery code
+        code_hash = hash_refresh_token(request.code)
+        recovery = db.query(RecoveryCode).filter(
+            RecoveryCode.user_id == user.id,
+            RecoveryCode.is_used == False,
+            RecoveryCode.code_hash == code_hash,
+        ).first()
+        if not recovery:
+            raise HTTPException(status_code = 400, detail = "Invalid code")
+        recovery.is_used = True
+        db.commit()
+    # issue user access and refresh token
+    access_token = create_access_token({"sub": str(user.id), "roles": [role.name for role in user.roles]})
+    refresh_token = generate_refresh_token()
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    refresh_token_row = RefreshToken(user_id=user.id, token_hash=hash_refresh_token(refresh_token),expires_at=expires_at, revoked=False)
+    db.add(refresh_token_row)
+    db.commit()
+    db.refresh(refresh_token_row)
+    return {"access_token": access_token, "token_type": "bearer", "refresh_token": refresh_token}
