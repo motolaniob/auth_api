@@ -10,7 +10,7 @@ def send_verification_email(email,verification_token):
     <p>Hi,</p>
     <p> Please verify your email by clicking the link below:</p>
     <p><a href = "{link}">Verify Email</a></p>
-    <p? This link expires in 24 hours.</p>
+    <p> This link expires in 24 hours.</p>
     """
     resend.Emails.send({
         "from": resend_email,
@@ -27,3 +27,9 @@ def send_password_reset_email(email,reset_token):
     <p><a href = "{link}">Reset Your Password</a></p>
     <p> This link expires in 1 hour.</p>
     """
+    resend.Emails.send({
+        "from": resend_email,
+        "to": email,
+        "subject": "Password reset",
+        "html": html_body,
+    })
