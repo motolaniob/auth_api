@@ -43,3 +43,21 @@ def client(db_session):
 def mock_hibp_check():
     with patch("app.schemas.user.check_password_breach", return_value=0):
         yield
+
+@pytest.fixture(autouse=True)
+def captured_verification_email():
+    sent = {}
+    def fake_send(email, verification_token):
+        sent["email"] = email
+        sent["token"] = verification_token
+    with patch("app.routers.auth.send_verification_email", side_effect=fake_send):
+        yield sent
+
+@pytest.fixture(autouse=True)
+def captured_reset_email():
+    sent = {}
+    def fake_send(email, reset_token):
+        sent["email"] = email
+        sent["token"] = reset_token
+    with patch("app.routers.auth.send_password_reset_email", side_effect=fake_send):
+        yield sent
