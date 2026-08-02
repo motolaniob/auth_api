@@ -1,9 +1,8 @@
 import uuid
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
-
+from app.core.emails import send_password_reset_email, send_verification_email
 from app.core.dependencies import get_current_user, require_verified
 from app.database import get_db
 from app.models.users import User
@@ -51,8 +50,7 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
     )
     db.add(token_row)
     db.commit()
-    #TO DO: Replace with real email service (see README)
-    print(f"Verification link: http://localhost:8000/auth/verify-email?token={verification_token}")
+    send_verification_email(new_user.email,verification_token)
     return new_user
 
 @router.post("/login", response_model=Token | MFAChallengeResponse)
@@ -157,8 +155,8 @@ def resend_verification(request: ResendVerificationRequest, db: Session = Depend
         expires_at = expires_at
     )
     db.add(token_row)
-    db.commit()   
-    print(f"Verification link: http://localhost:8000/auth/verify-email?token={verification_token}")#TO DO: Wire up to real email sender
+    db.commit()
+    send_verification_email(user.email,verification_token)
     return {"message": "If this account exists and is unverified, a new link has been sent to you"}
 
 @router.post("/forgot-password")
@@ -182,9 +180,7 @@ def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db
     db.add(token_row)
     db.commit()
 
-    #TO DO: Hook up to real email  service
-    print(f"Password reset link: http://localhost:8000/reset-password?token={reset_token}")
-
+    send_password_reset_email(user.email,reset_token)
     return {"message": "If account exists, a password reset link has been sent to your email address"}
 
 @router.post("/reset-password")

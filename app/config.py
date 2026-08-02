@@ -10,5 +10,7 @@ class Settings(BaseSettings):
     print(f"Exists: {(BASE_DIR / '.env').exists()}")
     model_config = SettingsConfigDict(env_file=BASE_DIR / ".env", env_file_encoding="utf-8",extra="ignore")
     keys_directory: Path
+    resend_api_key: str
+    resend_email_address: str
 
 settings = Settings()
