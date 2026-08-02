@@ -4,12 +4,13 @@ from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user
 from app.database import get_db
+from app.models import recovery_code, User
 from app.models.users import User
 from app.models.role import Role
 from app.models.refresh_token import RefreshToken
 from app.models.password_reset_token import PasswordResetToken
 from app.schemas.user import UserCreate, UserResponse
-from app.schemas.auth import RefreshRequest, Token, LoginRequest, ResendVerificationRequest, ForgotPasswordRequest, ResetPasswordRequest, MFAChallengeResponse
+from app.schemas.auth import RefreshRequest, Token, LoginRequest, ResendVerificationRequest, ForgotPasswordRequest, ResetPasswordRequest, MFAChallengeResponse, MFAVerifyRequest
 from app.models.email_verification_token import EmailVerificationToken
 from app.core.security import (
     hash_password,
@@ -60,7 +61,9 @@ def login(login_data: LoginRequest, db: Session = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
-    
+    if user.mfa_enabled:
+        challenge_token = create_access_token({"sub": str(user.id),"mfa_pending": True},expires_delta= timedelta(minutes=5))
+        return {"mfa_required": True, "challenge_token": challenge_token}
     access_token = create_access_token({"sub": str(user.id), "roles": [role.name for role in user.roles]})
     refresh_token = generate_refresh_token()
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
@@ -203,3 +206,21 @@ def setup_mfa(current_user: User = Depends(get_current_user), db: Session = Depe
     current_user.mfa_secret = secret
     db.commit()
 
+    provisioning_url = pyotp.totp.TOTP(secret).provisioning_uri(
+        name="current_user.email",
+        issuer_name = "AUTH_API"
+    )
+    recovery_codes =[generate_refresh_token()[0:10] for _ in range(8)]
+    for code in recovery_codes:
+        db.add(RecoveryCode(user_id=current_user.id, code_hash=hash_refresh_token(code)))
+        db.commit()
+    return {"secret": secret, "recovery_codes": recovery_codes, "provisioning_url": provisioning_url}
+
+@router.post("/mfa/verify-setup")
+def verify_mfa_setup(request:MFAVerifyRequest ,current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    totp = pyotp.TOTP(current_user.mfa_secret)
+    if not totp.verify(request.code):
+        raise HTTPException(status_code = 400, detail = "Invalid code")
+    current_user.mfa_enabled = True
+    db.commit()
+    return {"message": "MFA is enabled"}

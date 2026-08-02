@@ -25,3 +25,6 @@ class ResetPasswordRequest(BaseModel):
 class MFAChallengeResponse(BaseModel):
     mfa_required: bool = True
     challenge_token: str
+
+class MFAVerifyRequest(BaseModel):
+    code: st
