@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import RedirectResponse
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
+from app.config import settings
 from app.core.emails import send_password_reset_email, send_verification_email
 from app.core.dependencies import get_current_user, require_verified
 from app.database import get_db
@@ -23,6 +24,7 @@ from app.core.security import (
 import pyotp
 
 router = APIRouter()
+oauth_states : set[str] = set()
 
 #SIGNUP ROUTE
 @router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -278,7 +280,32 @@ def mfa_login_verify(request: MFALoginVerifyRequest, db: Session = Depends(get_d
     db.refresh(refresh_token_row)
     return {"access_token": access_token, "token_type": "bearer", "refresh_token": refresh_token}
 
-# OAUTH
 
+
+# Generate google login url which has state variable that will be used for csrf verification when response comes back from google.
+@router.get("/oauth/google/login")
+def google_login():
+    state = generate_refresh_token()[:32] #reusing generate_refresh_token to generate random string for oauth state
+    oauth_states.add(state) #Temporary implementation, add the state to list of states in set
+
+    google_auth_url = (
+        "https://accounts.google.com/o/oauth2/v2/auth"
+        f"?client_id={settings.google_client_id}"
+        f"&redirect_uri={settings.google_redirect_uri}"
+        "&response_type=code"
+        "&scope=openid%20email%20profile"
+        f"&state={state}"
+    )
+    return RedirectResponse(google_auth_url)
+
+# Google Login Process after getting response from Google oauth
+@router.get("/oauth/google/callback")
+def google_oauth_callback(code: str = None, state: str = None, db: Session = Depends(get_db)):
+    # Check if there is an error or if state returned from google is valid. If it is, remove from set.
+    if error:
+        raise HTTPException(status_code=400, detail=f"OAuth error: {error}")
+    if state not in oauth_states:
+        raise HTTPException(status_code=400, detail="Invalid state")
+    oauth_states.remove(state)
 
 
