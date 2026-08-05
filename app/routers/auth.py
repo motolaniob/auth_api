@@ -1,3 +1,4 @@
+import profile
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import RedirectResponse
@@ -7,6 +8,7 @@ from app.config import settings
 from app.core.emails import send_password_reset_email, send_verification_email
 from app.core.dependencies import get_current_user, require_verified
 from app.database import get_db
+from app.models.oauth_accounts import OAuthAccount
 from app.models.users import User
 from app.models.role import Role
 from app.models.refresh_token import RefreshToken
@@ -308,4 +310,53 @@ def google_oauth_callback(code: str = None, state: str = None, db: Session = Dep
         raise HTTPException(status_code=400, detail="Invalid state")
     oauth_states.remove(state)
 
+    # Swap code for Google tokens
+    token_response = requests.post("https://oauth2.googleapis.com/token",data = {
+        "code": code,
+        "client_id": settings.google_client_id,
+        "client_secret": settings.google_client_secret,
+        "redirect_uri": settings.google_redirect_uri,
+        "grant_type": "authorization_code",
+    })
+    google_tokens = token_response.json()
 
+    # Fetch User Profile and throw error if Gmail is not verified
+    userinfo_response = requests.get(
+        "https://www.googleapis.com/oauth2/v3/userinfo",
+        headers={"Authorization": f"Bearer {google_tokens['access_token']}"},
+    )
+    profile = userinfo_response.json()
+
+    if not profile.get("email_verified"):
+        raise HTTPException(status_code=400, detail="Google email not verified")
+
+    # Check if oauth or existing user that had not used oauth initially
+    oauth_account = db.query(OAuthAccount).filter(OAuthAccount.provider == "google", OAuthAccount.provider_user_id == profile["sub"]).first()
+
+    if oauth_account:
+        user = db.query(User).filter(User.id == oauth_account.user_id).first()
+    else:
+        user = db.query(User).filter(User.email == profile["email"]).first()
+
+        if not user:
+            # Add User if it does not exist
+            user = User(email =profile["email"], hashed_password = None, is_verified = True)
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            user_role = db.query(Role).filter(Role.name == "user").first()
+            user.roles.append(user_role)
+            db.commit()
+        # Oauth does not exist for user so we add it
+        db.add(OAuthAccount(user_id = user.id, provider = "google", provider_user_id = profile["sub"]))
+        db.commit()
+
+    # Give User access and refresh tokens
+    access_token = create_access_token({"sub": str(user.id), "roles": [role.name for role in user.roles]})
+    refresh_token = generate_refresh_token()
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    refresh_token_row = RefreshToken(user_id=user.id, token_hash=hash_refresh_token(refresh_token),expires_at=expires_at, revoked=False)
+    db.add(refresh_token_row)
+    db.commit()
+    db.refresh(refresh_token_row)
+    return {"access_token": access_token, "token_type": "bearer", "refresh_token": refresh_token}
