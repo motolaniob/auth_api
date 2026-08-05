@@ -6,7 +6,7 @@ from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 from app.config import settings
 from app.core.emails import send_password_reset_email, send_verification_email
-from app.core.dependencies import get_current_user, require_verified
+from app.core.dependencies import get_current_user, require_verified, give_user_tokens
 from app.database import get_db
 from app.models.oauth_accounts import OAuthAccount
 from app.models.users import User
@@ -71,14 +71,15 @@ def login(login_data: LoginRequest, db: Session = Depends(get_db)):
     if user.mfa_enabled:
         challenge_token = create_access_token({"sub": str(user.id),"mfa_pending": True},expires_delta= timedelta(minutes=5))
         return {"mfa_required": True, "challenge_token": challenge_token}
-    access_token = create_access_token({"sub": str(user.id), "roles": [role.name for role in user.roles]})
+    return give_user_tokens(user)
+    """access_token = create_access_token({"sub": str(user.id), "roles": [role.name for role in user.roles]})
     refresh_token = generate_refresh_token()
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
     refresh_token_row = RefreshToken(user_id = user.id, token_hash = hash_refresh_token(refresh_token), expires_at = expires_at, revoked = False)
     db.add(refresh_token_row)
     db.commit()
     db.refresh(refresh_token_row)
-    return {"access_token": access_token, "token_type": "bearer", "refresh_token": refresh_token}
+    return {"access_token": access_token, "token_type": "bearer", "refresh_token": refresh_token}"""
 
 @router.post("/refresh", response_model=Token)
 def refresh(refresh_input: RefreshRequest, db: Session = Depends(get_db)):
@@ -273,14 +274,15 @@ def mfa_login_verify(request: MFALoginVerifyRequest, db: Session = Depends(get_d
         recovery.is_used = True
         db.commit()
     # issue user access and refresh token
-    access_token = create_access_token({"sub": str(user.id), "roles": [role.name for role in user.roles]})
+    return give_user_tokens(user)
+    """access_token = create_access_token({"sub": str(user.id), "roles": [role.name for role in user.roles]})
     refresh_token = generate_refresh_token()
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
     refresh_token_row = RefreshToken(user_id=user.id, token_hash=hash_refresh_token(refresh_token),expires_at=expires_at, revoked=False)
     db.add(refresh_token_row)
     db.commit()
     db.refresh(refresh_token_row)
-    return {"access_token": access_token, "token_type": "bearer", "refresh_token": refresh_token}
+    return {"access_token": access_token, "token_type": "bearer", "refresh_token": refresh_token}"""
 
 
 
@@ -352,11 +354,13 @@ def google_oauth_callback(code: str = None, state: str = None, db: Session = Dep
         db.commit()
 
     # Give User access and refresh tokens
-    access_token = create_access_token({"sub": str(user.id), "roles": [role.name for role in user.roles]})
+    return give_user_tokens(user)
+
+    """access_token = create_access_token({"sub": str(user.id), "roles": [role.name for role in user.roles]})
     refresh_token = generate_refresh_token()
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
     refresh_token_row = RefreshToken(user_id=user.id, token_hash=hash_refresh_token(refresh_token),expires_at=expires_at, revoked=False)
     db.add(refresh_token_row)
     db.commit()
     db.refresh(refresh_token_row)
-    return {"access_token": access_token, "token_type": "bearer", "refresh_token": refresh_token}
+    return {"access_token": access_token, "token_type": "bearer", "refresh_token": refresh_token}"""

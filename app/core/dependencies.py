@@ -2,9 +2,11 @@ from fastapi.security import OAuth2PasswordBearer
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from jose.exceptions import JWTError, ExpiredSignatureError
+from datetime import datetime, timezone, timedelta
 from app.database import get_db
 from app.models.users import User
-from app.core.security import decode_access_token
+from app.models.refresh_token import RefreshToken
+from app.core.security import decode_access_token, create_access_token, hash_refresh_token, generate_refresh_token
 import uuid   
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -58,4 +60,14 @@ def get_token_payload(token: str = Depends(oauth2_scheme)) -> dict:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
-        )   
+        )
+
+def give_user_tokens(db: Session, user : User = Depends(get_current_user)) -> dict:
+    access_token = create_access_token({"sub": str(user.id), "roles": [role.name for role in user.roles]})
+    refresh_token = generate_refresh_token()
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    refresh_token_row = RefreshToken(user_id=user.id, token_hash=hash_refresh_token(refresh_token),expires_at=expires_at, revoked=False)
+    db.add(refresh_token_row)
+    db.commit()
+    db.refresh(refresh_token_row)
+    return {"access_token": access_token, "token_type": "bearer", "refresh_token": refresh_token}
