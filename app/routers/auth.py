@@ -71,7 +71,7 @@ def login(login_data: LoginRequest, db: Session = Depends(get_db)):
     if user.mfa_enabled:
         challenge_token = create_access_token({"sub": str(user.id),"mfa_pending": True},expires_delta= timedelta(minutes=5))
         return {"mfa_required": True, "challenge_token": challenge_token}
-    return give_user_tokens(user)
+    return give_user_tokens(db, user)
     """access_token = create_access_token({"sub": str(user.id), "roles": [role.name for role in user.roles]})
     refresh_token = generate_refresh_token()
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
@@ -274,7 +274,7 @@ def mfa_login_verify(request: MFALoginVerifyRequest, db: Session = Depends(get_d
         recovery.is_used = True
         db.commit()
     # issue user access and refresh token
-    return give_user_tokens(user)
+    return give_user_tokens(db, user)
     """access_token = create_access_token({"sub": str(user.id), "roles": [role.name for role in user.roles]})
     refresh_token = generate_refresh_token()
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
@@ -354,7 +354,7 @@ def google_oauth_callback(code: str = None, state: str = None, db: Session = Dep
         db.commit()
 
     # Give User access and refresh tokens
-    return give_user_tokens(user)
+    return give_user_tokens(db, user)
 
     """access_token = create_access_token({"sub": str(user.id), "roles": [role.name for role in user.roles]})
     refresh_token = generate_refresh_token()

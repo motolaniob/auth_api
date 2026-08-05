@@ -62,7 +62,7 @@ def get_token_payload(token: str = Depends(oauth2_scheme)) -> dict:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-def give_user_tokens(db: Session, user : User = Depends(get_current_user)) -> dict:
+def give_user_tokens(db: Session, user : User) -> dict:
     access_token = create_access_token({"sub": str(user.id), "roles": [role.name for role in user.roles]})
     refresh_token = generate_refresh_token()
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
