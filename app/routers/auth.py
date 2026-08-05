@@ -72,14 +72,6 @@ def login(login_data: LoginRequest, db: Session = Depends(get_db)):
         challenge_token = create_access_token({"sub": str(user.id),"mfa_pending": True},expires_delta= timedelta(minutes=5))
         return {"mfa_required": True, "challenge_token": challenge_token}
     return give_user_tokens(db, user)
-    """access_token = create_access_token({"sub": str(user.id), "roles": [role.name for role in user.roles]})
-    refresh_token = generate_refresh_token()
-    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
-    refresh_token_row = RefreshToken(user_id = user.id, token_hash = hash_refresh_token(refresh_token), expires_at = expires_at, revoked = False)
-    db.add(refresh_token_row)
-    db.commit()
-    db.refresh(refresh_token_row)
-    return {"access_token": access_token, "token_type": "bearer", "refresh_token": refresh_token}"""
 
 @router.post("/refresh", response_model=Token)
 def refresh(refresh_input: RefreshRequest, db: Session = Depends(get_db)):
@@ -275,16 +267,6 @@ def mfa_login_verify(request: MFALoginVerifyRequest, db: Session = Depends(get_d
         db.commit()
     # issue user access and refresh token
     return give_user_tokens(db, user)
-    """access_token = create_access_token({"sub": str(user.id), "roles": [role.name for role in user.roles]})
-    refresh_token = generate_refresh_token()
-    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
-    refresh_token_row = RefreshToken(user_id=user.id, token_hash=hash_refresh_token(refresh_token),expires_at=expires_at, revoked=False)
-    db.add(refresh_token_row)
-    db.commit()
-    db.refresh(refresh_token_row)
-    return {"access_token": access_token, "token_type": "bearer", "refresh_token": refresh_token}"""
-
-
 
 # Generate google login url which has state variable that will be used for csrf verification when response comes back from google.
 @router.get("/oauth/google/login")
@@ -355,12 +337,3 @@ def google_oauth_callback(code: str = None, state: str = None, db: Session = Dep
 
     # Give User access and refresh tokens
     return give_user_tokens(db, user)
-
-    """access_token = create_access_token({"sub": str(user.id), "roles": [role.name for role in user.roles]})
-    refresh_token = generate_refresh_token()
-    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
-    refresh_token_row = RefreshToken(user_id=user.id, token_hash=hash_refresh_token(refresh_token),expires_at=expires_at, revoked=False)
-    db.add(refresh_token_row)
-    db.commit()
-    db.refresh(refresh_token_row)
-    return {"access_token": access_token, "token_type": "bearer", "refresh_token": refresh_token}"""
