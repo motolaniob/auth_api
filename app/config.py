@@ -5,6 +5,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 class Settings(BaseSettings):
     database_url: str
     test_database_url: str
+    redis_url: str
     debug_mode: bool
     print(f"Looking for .env at: {BASE_DIR / '.env'}")
     print(f"Exists: {(BASE_DIR / '.env').exists()}")
