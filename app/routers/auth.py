@@ -1,12 +1,13 @@
-import profile
+import requests
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import RedirectResponse
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 from app.config import settings
 from app.core.emails import send_password_reset_email, send_verification_email
 from app.core.dependencies import get_current_user, require_verified, give_user_tokens
+from app.core.redis_client import check_rate_limit
 from app.database import get_db
 from app.models.oauth_accounts import OAuthAccount
 from app.models.users import User
@@ -30,7 +31,8 @@ oauth_states : set[str] = set()
 
 #SIGNUP ROUTE
 @router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def signup(user: UserCreate, db: Session = Depends(get_db)):
+def signup(user: UserCreate, redis_request:Request, db: Session = Depends(get_db)):
+    check_rate_limit(key = f"signup: {redis_request.client.host}", limit = 5, window_seconds = 300)
     existing_user = db.query(User).filter(User.email == user.email).first()
     if existing_user:
         raise HTTPException(
@@ -61,7 +63,8 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
 
 #LOGIN ROUTE
 @router.post("/login", response_model=Token | MFAChallengeResponse)
-def login(login_data: LoginRequest, db: Session = Depends(get_db)):
+def login(login_data: LoginRequest,db: Session = Depends(get_db)):
+    check_rate_limit(f"login: {login_data.email}", limit = 5, window_seconds = 300)
     user = db.query(User).filter(User.email == login_data.email).first()
     if not user or not user.hashed_password or not verify_password(user.hashed_password, login_data.password):
         raise HTTPException(
@@ -142,7 +145,8 @@ def verify_email(token:str, db: Session = Depends(get_db)):
 
 # RESENDING EMAIL VERIFICATION
 @router.post("/resend-verification")
-def resend_verification(request: ResendVerificationRequest, db: Session = Depends(get_db)):
+def resend_verification(request: ResendVerificationRequest,redis_request: Request, db: Session = Depends(get_db)):
+    check_rate_limit(key=f"resend_verification: {redis_request.client.host}", limit=5, window_seconds=300)
     user = db.query(User).filter(User.email == request.email).first()
     if not user or user.is_verified:
         return {"message": "If this account exists and is unverified, a new link has been sent to you"}
@@ -164,7 +168,8 @@ def resend_verification(request: ResendVerificationRequest, db: Session = Depend
 
 #FORGOT PASSWORD
 @router.post("/forgot-password")
-def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db)):
+def forgot_password(request: ForgotPasswordRequest,redis_request: Request, db: Session = Depends(get_db)):
+    check_rate_limit(key=f"forgot_password: {redis_request.client.host}", limit=5, window_seconds=300)
     user = db.query(User).filter(User.email == request.email).first()
     if not user:
         return {"message": "If account exists, a password reset link has been sent to your email address"}

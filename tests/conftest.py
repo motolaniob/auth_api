@@ -7,6 +7,8 @@ from app.config import settings
 from app.main import app
 from app.models.role import Role
 from unittest.mock import patch
+from app.core.redis_client import redis_client
+
 
 main_db = settings.database_url
 temp_engine = create_engine(main_db)
@@ -19,6 +21,12 @@ with temp_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as co
 
 engine = create_engine(settings.test_database_url)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+@pytest.fixture(autouse=True)
+def flush_redis():
+    redis_client.flushdb()
+    yield
+    redis_client.flushdb()
 
 @pytest.fixture(scope = "function")
 def db_session():
