@@ -8,7 +8,9 @@ import hashlib
 import requests
 import secrets
 from sqlalchemy.orm import Session
+from app.models.users import User
 from app.models.refresh_token import RefreshToken
+from app.models.audit_logs import AuditLog
 
 private_key = Path(settings.keys_directory / "private_key.pem").read_text()
 public_key = Path(settings.keys_directory / "public_key.pem").read_text()
@@ -61,4 +63,18 @@ def hash_refresh_token(token: str) -> str:
 
 def revoke_all_refresh_tokens(user_id: str, db: Session):
     db.query(RefreshToken).filter(RefreshToken.user_id == user_id).update({"revoked": True})
+    db.commit()
+
+def give_user_tokens(db: Session, user : User) -> dict:
+    access_token = create_access_token({"sub": str(user.id), "roles": [role.name for role in user.roles]})
+    refresh_token = generate_refresh_token()
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    refresh_token_row = RefreshToken(user_id=user.id, token_hash=hash_refresh_token(refresh_token),expires_at=expires_at, revoked=False)
+    db.add(refresh_token_row)
+    db.commit()
+    db.refresh(refresh_token_row)
+    return {"access_token": access_token, "token_type": "bearer", "refresh_token": refresh_token}
+
+def log_audit_event(db: Session, user_id, event_type: str, ip_address: str = None, user_agent: str = None ,event_metadata: dict = None):
+    db.add(AuditLog(user_id=user_id, event_type=event_type, ip_address=ip_address, user_agent=user_agent, event_metadata=event_metadata))
     db.commit()
