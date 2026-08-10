@@ -21,3 +21,4 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), onupdate= lambda: datetime.now(timezone.utc), server_default=text("now()"))
     roles: Mapped[list["Role"]] = relationship(back_populates="users", secondary=user_roles)
     refresh_tokens: Mapped[list["RefreshToken"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    tokens_valid_after: Mapped[datetime|None] = mapped_column(DateTime(timezone=True), nullable=True)

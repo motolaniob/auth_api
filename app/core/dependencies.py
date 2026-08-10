@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from jose.exceptions import JWTError, ExpiredSignatureError
 from datetime import datetime, timezone, timedelta
 from app.database import get_db
+from app.models import User
 from app.models.users import User
 from app.models.refresh_token import RefreshToken
 from app.core.security import decode_access_token, create_access_token, hash_refresh_token, generate_refresh_token
@@ -29,7 +30,9 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     user = db.query(User).filter(User.id == uuid.UUID(user_id)).first()
     if user is None:
         raise credentials_exception
-    
+    iat = payload.get("iat")
+    if user.tokens_valid_after and (iat is None or iat < user.tokens_valid_after):
+        raise credentials_exception
     return user
 
 def require_role(required_role: str):
