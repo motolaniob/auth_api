@@ -1,5 +1,6 @@
 from app.core.security import revoke_all_refresh_tokens, log_audit_event
 from app.core.dependencies import require_role, require_verified
+from app.models import User
 from app.models.role import Role
 from app.models.users import User
 from app.models.recovery_code import RecoveryCode
@@ -42,6 +43,7 @@ def update_user_roles(user_id:str, new_role_names:list[str], full_request: Reque
     
     # Update the user's roles
     user.roles = new_roles
+    user.tokens_valid_after = datetime.now(timezone.utc)
     db.commit()
     db.refresh(user)
     

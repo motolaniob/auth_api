@@ -7,8 +7,9 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.core.emails import send_password_reset_email, send_verification_email
 from app.core.dependencies import get_current_user, require_verified
-from app.core.redis_client import check_rate_limit
+from app.core.redis_client import check_rate_limit, store_oauth_state, consume_oauth_state
 from app.database import get_db
+from app.models import User
 from app.models.oauth_accounts import OAuthAccount
 from app.models.users import User
 from app.models.role import Role
@@ -27,7 +28,7 @@ from app.core.security import (
 import pyotp
 
 router = APIRouter()
-oauth_states : set[str] = set()
+
 
 #SIGNUP ROUTE
 @router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -211,6 +212,7 @@ def reset_password(request: ResetPasswordRequest, full_request: Request,db: Sess
     token_row.is_used = True
     #After old password is reset, revoke all refresh tokens. 
     db.query(RefreshToken).filter(RefreshToken.user_id == user.id,RefreshToken.revoked == False,).update({"revoked":True})
+    user.tokens_valid_after = datetime.now(timezone.utc)
     db.commit()
     log_audit_event(db, user.id,"reset_password",full_request.client.host,full_request.headers.get("user-agent"))
     return {"message": "Password reset successfully"}
@@ -291,7 +293,7 @@ def mfa_login_verify(request: MFALoginVerifyRequest, full_request: Request,db: S
 @router.get("/oauth/google/login")
 def google_login():
     state = generate_refresh_token()[:32] #reusing generate_refresh_token to generate random string for oauth state
-    oauth_states.add(state) #Temporary implementation, add the state to list of states in set
+    store_oauth_state(state)
 
     google_auth_url = (
         "https://accounts.google.com/o/oauth2/v2/auth"
@@ -310,10 +312,8 @@ def google_oauth_callback(code: str = None, state: str = None,error: str = None,
     # Check if there is an error or if state returned from google is valid. If it is, remove from set.
     if error:
         raise HTTPException(status_code=400, detail=f"OAuth error: {error}")
-    if state not in oauth_states:
+    if not consume_oauth_state(state):
         raise HTTPException(status_code=400, detail="Invalid state")
-    oauth_states.remove(state)
-
     # Swap code for Google tokens
     token_response = requests.post("https://oauth2.googleapis.com/token",data = {
         "code": code,
