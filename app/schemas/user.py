@@ -23,5 +23,4 @@ class UserResponse(BaseModel):
     is_active: bool
     is_verified: bool
 
-    class Config:
-        model_config = ConfigDict(form_attributes=True)
+    model_config = ConfigDict(form_attributes=True)
