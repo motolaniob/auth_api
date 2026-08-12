@@ -65,11 +65,11 @@ def revoke_all_refresh_tokens(user_id: str, db: Session):
     db.query(RefreshToken).filter(RefreshToken.user_id == user_id).update({"revoked": True})
     db.commit()
 
-def give_user_tokens(db: Session, user : User) -> dict:
+def give_user_tokens(db: Session, user : User, device_info: str) -> dict:
     access_token = create_access_token({"sub": str(user.id), "roles": [role.name for role in user.roles]})
     refresh_token = generate_refresh_token()
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
-    refresh_token_row = RefreshToken(user_id=user.id, token_hash=hash_refresh_token(refresh_token),expires_at=expires_at, revoked=False)
+    refresh_token_row = RefreshToken(user_id=user.id, token_hash=hash_refresh_token(refresh_token),expires_at=expires_at, revoked=False, device_info=device_info)
     db.add(refresh_token_row)
     db.commit()
     db.refresh(refresh_token_row)

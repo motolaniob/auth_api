@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict
 from uuid import UUID
 from datetime import datetime
 from app.core.security import check_password_breach
@@ -24,4 +24,4 @@ class UserResponse(BaseModel):
     is_verified: bool
 
     class Config:
-        from_attributes = True
+        model_config = ConfigDict(form_attributes=True)

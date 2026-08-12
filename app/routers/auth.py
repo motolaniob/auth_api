@@ -9,7 +9,6 @@ from app.core.emails import send_password_reset_email, send_verification_email
 from app.core.dependencies import get_current_user, require_verified
 from app.core.redis_client import check_rate_limit, store_oauth_state, consume_oauth_state
 from app.database import get_db
-from app.models import User
 from app.models.oauth_accounts import OAuthAccount
 from app.models.users import User
 from app.models.role import Role
@@ -80,10 +79,10 @@ def login(login_data: LoginRequest,full_request: Request,db: Session = Depends(g
         log_audit_event(db, user.id, "mfa_challenge_issued",full_request.client.host,full_request.headers.get("user-agent"),)
         return {"mfa_required": True, "challenge_token": challenge_token}
     log_audit_event(db, user.id, "login_successful",full_request.client.host,full_request.headers.get("user-agent"),)
-    return give_user_tokens(db, user)
+    return give_user_tokens(db, user,device_info=full_request.headers.get("user-agent"))
 
 @router.post("/refresh", response_model=Token)
-def refresh(refresh_input: RefreshRequest, db: Session = Depends(get_db)):
+def refresh(full_request: Request, refresh_input: RefreshRequest, db: Session = Depends(get_db)):
     refresh_token_hash = hash_refresh_token(refresh_input.refresh_token)
     refresh_token_row = db.query(RefreshToken).filter(RefreshToken.token_hash == refresh_token_hash).first()
     
@@ -109,7 +108,7 @@ def refresh(refresh_input: RefreshRequest, db: Session = Depends(get_db)):
     db.add(refresh_token_row)
     
     # Store the new refresh token
-    new_refresh_token_row = RefreshToken(user_id=user.id, token_hash=hash_refresh_token(new_refresh_token), expires_at=expires_at, revoked=False)
+    new_refresh_token_row = RefreshToken(user_id=user.id, token_hash=hash_refresh_token(new_refresh_token), expires_at=expires_at, revoked=False,device_info = full_request.headers.get("user-agent"))
     db.add(new_refresh_token_row)
     
     db.commit()
@@ -287,7 +286,7 @@ def mfa_login_verify(request: MFALoginVerifyRequest, full_request: Request,db: S
         db.commit()
     # issue user access and refresh token
     log_audit_event(db, user.id, "mfa_login_success",full_request.client.host,full_request.headers.get("user-agent"))
-    return give_user_tokens(db, user)
+    return give_user_tokens(db, user,device_info=full_request.headers.get("user-agent"))
 
 # Generate google login url which has state variable that will be used for csrf verification when response comes back from google.
 @router.get("/oauth/google/login")
@@ -307,7 +306,7 @@ def google_login():
 
 # Google Login Process after getting response from Google oauth
 @router.get("/oauth/google/callback")
-def google_oauth_callback(code: str = None, state: str = None,error: str = None, db: Session = Depends(get_db)):
+def google_oauth_callback(full_request:Request,code: str = None, state: str = None,error: str = None, db: Session = Depends(get_db)):
     is_new_user = False
     # Check if there is an error or if state returned from google is valid. If it is, remove from set.
     if error:
@@ -358,4 +357,26 @@ def google_oauth_callback(code: str = None, state: str = None,error: str = None,
 
     # Give User access and refresh tokens
     log_audit_event(db, user.id, "oauth_login",event_metadata = {"provider":"google","new_account": is_new_user})
-    return give_user_tokens(db, user)
+    return give_user_tokens(db, user,device_info=full_request.headers.get("user-agent"))
+
+# Get & Remove Active Sessions Routes
+
+@router.get("/me/sessions", response_model = list[SessionOut])
+def list_sessions(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return db.query(RefreshToken).filter(RefreshToken.user_id == current_user.id,RefreshToken.revoked == False, RefreshToken.expires_at > datetime.now(timezone
+                                                                                                                                                       .utc)).all()
+@router.delete("/me/sessions/{session_id}", status_code = status.HTTP_204_NO_CONTENT)
+def delete_single_session(session_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    session_row = db.query(RefreshToken).filter(RefreshToken.user_id == current_user.id,RefreshToken.id == session_id,RefreshToken.revoked == False).first()
+    if not session_row:
+        raise HTTPException(status_code = 404, detail = "Session not found")
+    session_row.revoked = True
+    db.commit()
+    return None
+
+@router.delete("/me/sessions", status_code = status.HTTP_204_NO_CONTENT)
+def delete_all_sessions(current_user: User = Depends(get_current_user),db: Session = Depends(get_db)):
+    db.query(RefreshToken).filter(RefreshToken.user_id == current_user.id,RefreshToken.revoked == False).update({"revoked": True})
+    current_user.tokens_valid_after = datetime.now(timezone.utc)
+    db.commit()
+    return None

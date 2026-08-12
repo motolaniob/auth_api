@@ -1,4 +1,5 @@
-from pydantic import BaseModel, EmailStr, Field
+from datetime import datetime
+from pydantic import BaseModel, EmailStr, Field, ConfigDict
 
 class Token(BaseModel):
     access_token: str
@@ -35,3 +36,11 @@ class MFAVerifyRequest(BaseModel):
 class MFALoginVerifyRequest(BaseModel):
     challenge_token: str
     code: str
+
+class SessionOut(BaseModel):
+    id: UUID
+    created_at: datetime
+    expires_at: datetime
+    device_info: str | None
+
+    model_config = ConfigDict(form_attributes=True)
