@@ -16,7 +16,7 @@ from app.models.refresh_token import RefreshToken
 from app.models.password_reset_token import PasswordResetToken
 from app.models.recovery_code import RecoveryCode
 from app.schemas.user import UserCreate, UserResponse
-from app.schemas.auth import RefreshRequest, Token, LoginRequest, ResendVerificationRequest, ForgotPasswordRequest, ResetPasswordRequest, MFAChallengeResponse, MFAVerifyRequest, MFALoginVerifyRequest, MFADisableRequest
+from app.schemas.auth import RefreshRequest, Token, LoginRequest, ResendVerificationRequest, ForgotPasswordRequest, ResetPasswordRequest, MFAChallengeResponse, MFAVerifyRequest, MFALoginVerifyRequest, MFADisableRequest, SessionOut
 from app.models.email_verification_token import EmailVerificationToken
 from app.core.security import (
     hash_password,
