@@ -33,11 +33,14 @@ def db_session():
     Base.metadata.create_all(bind=engine)
     session = TestingSessionLocal()
     # Seed roles for RBAC tests
-    session.add_all([Role(name="user", description="Standard user"), Role(name="admin", description="Administrator")])
-    session.commit()
-    yield session
-    session.close()
-    Base.metadata.drop_all(bind=engine)
+    try:
+        session.add_all(
+            [Role(name="user", description="Standard user"), Role(name="admin", description="Administrator")])
+        session.commit()
+        yield session
+    finally:
+        session.close()
+        Base.metadata.drop_all(bind=engine)
 
 @pytest.fixture(scope = "function")
 def client(db_session):
