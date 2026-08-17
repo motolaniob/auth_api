@@ -69,3 +69,17 @@ def captured_reset_email():
         sent["token"] = reset_token
     with patch("app.routers.auth.send_password_reset_email", side_effect=fake_send):
         yield sent
+
+@pytest.fixture()
+def mock_google_oauth():
+    with patch("app.routers.auth.requests.post") as mock_post, patch("app.routers.auth.requests.get") as mock_get:
+        def _configure(email = "test@example.com",sub = "google-123", email_verified = True):
+            mock_post.return_value.json.return_value = {"access_token": "fake_access_token"}
+            mock_get.return_value.json.return_value = {"email": email, "sub": sub, "email_verified": email_verified}
+            return mock_post, mock_get
+        yield _configure
+
+@pytest.fixture()
+def mock_consume_oauth_states():
+    with patch("app.routers.auth.consume_oauth_state", return_value = True) as mock:
+        yield mock
