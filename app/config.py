@@ -13,5 +13,8 @@ class Settings(BaseSettings):
     keys_directory: Path
     resend_api_key: str
     resend_email_address: str
+    google_client_id: str
+    google_client_secret: str
+    google_redirect_uri: str
 
 settings = Settings()
