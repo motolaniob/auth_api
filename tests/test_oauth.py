@@ -2,11 +2,11 @@ from app.models.users import User
 from app.models.oauth_accounts import OAuthAccount
 
 
-def test_new_google_oauth_user_logs_in(client, db_session, mock_google_oauth):
+
+def test_new_google_oauth_user_logs_in(client, db_session, mock_google_oauth,mock_consume_oauth_states):
     email = "new_user_oauth@example.com"
     sub = "google-new-111"
     mock_google_oauth(email= email, sub = sub)
-    mock_consume_oauth_states()
     response = client.get("/auth/oauth/google/callback?code=test-code&state=valid-state")
     assert response.status_code == 200
     user = db_session.query(User).filter(User.email == email).first()
@@ -14,13 +14,12 @@ def test_new_google_oauth_user_logs_in(client, db_session, mock_google_oauth):
     oauth_user = db_session.query(OAuthAccount).filter(OAuthAccount.user_id == user.id).first()
     assert oauth_user is not None
 
-def test_unverified_user_logs_in(client, db_session,mock_google_oauth):
+def test_unverified_user_logs_in(client, db_session,mock_google_oauth,mock_consume_oauth_states):
     mock_google_oauth(email_verified = False)
-    mock_consume_oauth_states()
     response = client.get("/auth/oauth/google/callback?code=test-code&state=valid-state")
     assert response.status_code == 400
 
-def test_returning_oauth_user_logs_in(client, db_session,mock_google_oauth):
+def test_returning_oauth_user_logs_in(client, db_session,mock_google_oauth,mock_consume_oauth_states):
     email = "returning_oauth_user@example.com"
     sub = "google-existing-456"
     user = User(email = email)
@@ -39,7 +38,7 @@ def test_returning_oauth_user_logs_in(client, db_session,mock_google_oauth):
     oauth_user = db_session.query(OAuthAccount).filter(OAuthAccount.user_id == user_id).all()
     assert len(oauth_user) == 1
 
-def test_returning_non_oauth_user_logs_in(client, db_session,mock_google_oauth):
+def test_returning_non_oauth_user_logs_in(client, db_session,mock_google_oauth,mock_consume_oauth_states):
     email = "returning_user@example.com"
     sub = "google-first_time_oauth-456"
     user = User(email = email)
