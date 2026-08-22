@@ -1,6 +1,15 @@
+"""
+Admin-only routes: user listing, role management, and admin-initiated
+MFA disable (e.g. for account recovery support tickets).
+
+All routes here require the "admin" role via require_role("admin").
+Role changes and admin-initiated MFA disables are always logged via
+log_audit_event, including which admin performed the action.
+"""
+
 from app.core.security import revoke_all_refresh_tokens, log_audit_event
 from app.core.dependencies import require_role, require_verified
-from app.models import User
+from datetime import datetime, timezone
 from app.models.role import Role
 from app.models.users import User
 from app.models.recovery_code import RecoveryCode
@@ -43,6 +52,9 @@ def update_user_roles(user_id:str, new_role_names:list[str], full_request: Reque
     
     # Update the user's roles
     user.roles = new_roles
+    # Revoking all refresh tokens (and bumping tokens_valid_after so existing
+    # access tokens are invalidated too) ensures a role change takes effect
+    # immediately, rather than waiting for the user's current token to expire.
     user.tokens_valid_after = datetime.now(timezone.utc)
     db.commit()
     db.refresh(user)
@@ -52,6 +64,8 @@ def update_user_roles(user_id:str, new_role_names:list[str], full_request: Reque
     log_audit_event(db, user.id, "role_changed", full_request.client.host, full_request.headers.get("user-agent") ,event_metadata= {"old_roles": [r.name for r in old_roles], "new_roles": new_role_names, "changed_by": str(current_user.id)})
     return user
 
+# Lets an admin disable MFA on a user's behalf — e.g. when a user is locked
+# out after losing both their authenticator device and recovery codes.
 @router.post("/users/{user_id}/mfa/disable")
 def admin_disable_mfa(user_id: str, full_request: Request,current_user: User = Depends(require_role("admin")), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id== uuid.UUID(user_id)).first()

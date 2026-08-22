@@ -1,5 +1,10 @@
-from fastapi import HTTPException
+"""
+Redis-backed helpers: fixed-window rate limiting for public auth endpoints,
+and short-lived OAuth state storage for CSRF protection during the Google
+OAuth flow.
+"""
 
+from fastapi import HTTPException
 import redis
 from app.config import settings
 
