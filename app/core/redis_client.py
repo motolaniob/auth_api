@@ -13,7 +13,7 @@ def check_rate_limit(key:str, limit:int, window_seconds:int):
         raise HTTPException(status_code = 429, detail = "Too many requests, please try again later")
 
 def store_oauth_state(state: str, ttl_seconds: int = 600):
-    redis_client.setex(f"oauth_state:{state}",ttl_seconds,"1")
+    redis_client.set(f"oauth_state:{state}","1",ex = ttl_seconds)
 
 def consume_oauth_state(state: str) -> bool:
     key = f"oauth_state:{state}"
