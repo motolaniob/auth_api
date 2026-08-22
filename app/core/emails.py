@@ -1,12 +1,7 @@
 """
 Transactional email sending via Resend: email verification and password
-reset links.
-
-NOTE: Links are currently hardcoded to localhost:8000 — must be replaced
-with a configurable base URL (settings.app_base_url or similar) before
-deployment, since this won't resolve for real users.
+reset links. Link base URL is configurable via settings.app_base_url.
 """
-
 import resend
 from app.config import settings
 
