@@ -14,6 +14,7 @@ from app.models.role import Role
 from app.models.users import User
 from app.models.recovery_code import RecoveryCode
 from app.schemas.user import UserResponse
+from app.schemas.auth import MessageResponse
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -66,7 +67,7 @@ def update_user_roles(user_id:str, new_role_names:list[str], full_request: Reque
 
 # Lets an admin disable MFA on a user's behalf — e.g. when a user is locked
 # out after losing both their authenticator device and recovery codes.
-@router.post("/users/{user_id}/mfa/disable")
+@router.post("/users/{user_id}/mfa/disable", response_model=MessageResponse)
 def admin_disable_mfa(user_id: str, full_request: Request,current_user: User = Depends(require_role("admin")), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id== uuid.UUID(user_id)).first()
     if not user:
