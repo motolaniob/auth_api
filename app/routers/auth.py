@@ -33,7 +33,7 @@ router = APIRouter()
 @router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def signup(user: UserCreate, full_request:Request, db: Session = Depends(get_db)):
     check_rate_limit(key = f"signup: {full_request.client.host}", limit = 5, window_seconds = 300)
-    existing_user = db.query(User).filter(User.email == user.email).first()
+    existing_user = db.query(User).filter(User.email == user.email.lower()).first()
     if existing_user:
         log_audit_event(db, existing_user.id, "signup_failed_duplicate_email", full_request.client.host,full_request.headers.get("user-agent"),)
         raise HTTPException(
@@ -42,7 +42,7 @@ def signup(user: UserCreate, full_request:Request, db: Session = Depends(get_db)
         )
     
     hashed_password = hash_password(user.password)
-    new_user = User(email=user.email, hashed_password=hashed_password)
+    new_user = User(email=user.email.lower(), hashed_password=hashed_password)
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
@@ -66,8 +66,8 @@ def signup(user: UserCreate, full_request:Request, db: Session = Depends(get_db)
 #LOGIN ROUTE
 @router.post("/login", response_model=Token | MFAChallengeResponse)
 def login(login_data: LoginRequest,full_request: Request,db: Session = Depends(get_db)):
-    check_rate_limit(f"login: {login_data.email}", limit = 5, window_seconds = 300)
-    user = db.query(User).filter(User.email == login_data.email).first()
+    check_rate_limit(f"login: {login_data.email.lower()}", limit = 5, window_seconds = 300)
+    user = db.query(User).filter(User.email == login_data.email.lower()).first()
     if not user or not user.hashed_password or not verify_password(user.hashed_password, login_data.password):
         log_audit_event(db, user.id if user else None, "login_failed_invalid_email",full_request.client.host,full_request.headers.get("user-agent"),)
         raise HTTPException(
@@ -152,7 +152,7 @@ def verify_email(token:str, db: Session = Depends(get_db)):
 @router.post("/resend-verification")
 def resend_verification(request: ResendVerificationRequest,full_request: Request, db: Session = Depends(get_db)):
     check_rate_limit(key=f"resend_verification: {full_request.client.host}", limit=5, window_seconds=300)
-    user = db.query(User).filter(User.email == request.email).first()
+    user = db.query(User).filter(User.email == request.email.lower()).first()
     if not user or user.is_verified:
         return {"message": "If this account exists and is unverified, a new link has been sent to you"}
 
@@ -168,14 +168,14 @@ def resend_verification(request: ResendVerificationRequest,full_request: Request
     )
     db.add(token_row)
     db.commit()
-    send_verification_email(user.email,verification_token)
+    send_verification_email(user.email.lower(),verification_token)
     return {"message": "If this account exists and is unverified, a new link has been sent to you"}
 
 #FORGOT PASSWORD
 @router.post("/forgot-password")
 def forgot_password(request: ForgotPasswordRequest,full_request: Request, db: Session = Depends(get_db)):
     check_rate_limit(key=f"forgot_password: {full_request.client.host}", limit=5, window_seconds=300)
-    user = db.query(User).filter(User.email == request.email).first()
+    user = db.query(User).filter(User.email == request.email.lower()).first()
     if not user:
         return {"message": "If account exists, a password reset link has been sent to your email address"}
 
@@ -194,7 +194,7 @@ def forgot_password(request: ForgotPasswordRequest,full_request: Request, db: Se
     db.add(token_row)
     db.commit()
 
-    send_password_reset_email(user.email,reset_token)
+    send_password_reset_email(user.email.lower(),reset_token)
     return {"message": "If account exists, a password reset link has been sent to your email address"}
 
 #RESET PASSWORD
@@ -224,7 +224,7 @@ def setup_mfa(current_user: User = Depends(get_current_user), db: Session = Depe
     db.commit()
 
     provisioning_url = pyotp.totp.TOTP(secret).provisioning_uri(
-        name=current_user.email,
+        name=current_user.email.lower(),
         issuer_name = "AUTH_API"
     )
     recovery_codes =[generate_refresh_token()[0:10] for _ in range(8)] #reusing refresh token function to generate random 10 digit recovery codes
@@ -331,6 +331,8 @@ def google_oauth_callback(full_request:Request,code: str = None, state: str = No
         "https://www.googleapis.com/oauth2/v3/userinfo",
         headers={"Authorization": f"Bearer {google_tokens['access_token']}"},
     )
+    if userinfo_response.status_code != 200:
+        raise HTTPException(status_code=400, detail="Failed to fetch Google user info")
     profile = userinfo_response.json()
 
     if not profile.get("email_verified"):
@@ -342,12 +344,12 @@ def google_oauth_callback(full_request:Request,code: str = None, state: str = No
     if oauth_account:
         user = db.query(User).filter(User.id == oauth_account.user_id).first()
     else:
-        user = db.query(User).filter(User.email == profile["email"]).first()
+        user = db.query(User).filter(User.email == profile["email"].lower()).first()
 
         if not user:
             # Add User if it does not exist
             is_new_user = True
-            user = User(email =profile["email"], hashed_password = None, is_verified = True)
+            user = User(email =profile["email"].lower(), hashed_password = None, is_verified = True)
             db.add(user)
             db.commit()
             db.refresh(user)
@@ -359,7 +361,7 @@ def google_oauth_callback(full_request:Request,code: str = None, state: str = No
         db.commit()
 
     # Give User access and refresh tokens
-    log_audit_event(db, user.id, "oauth_login",event_metadata = {"provider":"google","new_account": is_new_user})
+    log_audit_event(db, user.id, "oauth_login",full_request.client.host,full_request.headers.get("user-agent"),event_metadata = {"provider":"google","new_account": is_new_user})
     return give_user_tokens(db, user,device_info=full_request.headers.get("user-agent"))
 
 # Get & Remove Active Sessions Routes

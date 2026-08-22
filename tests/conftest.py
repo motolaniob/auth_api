@@ -77,7 +77,9 @@ def captured_reset_email():
 def mock_google_oauth():
     with patch("app.routers.auth.requests.post") as mock_post, patch("app.routers.auth.requests.get") as mock_get:
         def _configure(email = "test@example.com",sub = "google-123", email_verified = True):
+            mock_post.return_value.status_code = 200
             mock_post.return_value.json.return_value = {"access_token": "fake_access_token"}
+            mock_get.return_value.status_code = 200
             mock_get.return_value.json.return_value = {"email": email, "sub": sub, "email_verified": email_verified}
             return mock_post, mock_get
         yield _configure
@@ -93,3 +95,12 @@ def mock_google_token_exchange_failure():
         mock.return_value.status_code = 400
         mock.return_value.json.return_value = {"error": "Unauthorized"}
         yield mock
+
+@pytest.fixture()
+def mock_google_userinfo_failure():
+    with patch("app.routers.auth.requests.post") as mock_post, patch("app.routers.auth.requests.get") as mock_get:
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.json.return_value = {"access_token": "fake_access_token"}
+        mock_get.return_value.status_code = 400
+        mock_get.return_value.json.return_value = {"error": "invalid_token"}
+        yield mock_post, mock_get
