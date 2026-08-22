@@ -1,6 +1,6 @@
 from app.models.users import User
 from app.models.oauth_accounts import OAuthAccount
-
+from urllib.parse import urlparse, parse_qs
 
 
 def test_new_google_oauth_user_logs_in(client, db_session, mock_google_oauth,mock_consume_oauth_states):
@@ -54,3 +54,17 @@ def test_returning_non_oauth_user_logs_in(client, db_session,mock_google_oauth,m
     assert user[0].id == user_id
     oauth_user = db_session.query(OAuthAccount).filter(OAuthAccount.user_id == user_id).all()
     assert len(oauth_user) == 1
+
+def test_invalid_state_rejected(client, db_session,mock_google_oauth):
+    mock_google_oauth()
+    response = client.get("/auth/oauth/google/callback?code=test-code?state=invalid-state")
+    assert response.status_code == 400
+
+def test_reused_state_rejected(client, db_session,mock_google_oauth):
+    response = client.get("/auth/oauth/google/login", follow_redirects=False)
+    state = parse_qs(urlparse(response.headers["location"]).query)["state"][0]
+    mock_google_oauth()
+    response = client.get(f"/auth/oauth/google/callback?code=test-code&state={state}")
+    assert response.status_code == 200
+    response = client.get(f"/auth/oauth/google/callback?code=test-code&state={state}")
+    assert response.status_code == 400
