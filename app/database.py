@@ -1,3 +1,5 @@
+"""Database engine, session factory, and the get_db() FastAPI dependency."""
+
 from sqlalchemy import create_engine
 from app.config import settings
 from sqlalchemy.orm import sessionmaker, DeclarativeBase 
