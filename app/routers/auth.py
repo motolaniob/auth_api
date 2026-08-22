@@ -309,7 +309,7 @@ def google_login():
 def google_oauth_callback(full_request:Request,code: str = None, state: str = None,error: str = None, db: Session = Depends(get_db)):
     check_rate_limit(key=f"oauth_callback: {full_request.client.host}", limit=5, window_seconds=300)
     is_new_user = False
-    # Check if there is an error or if state returned from google is valid. If it is, remove from set.
+    # Check if there is an error or if state returned from Google is valid. If it is, remove from set.
     if error:
         raise HTTPException(status_code=400, detail=f"OAuth error: {error}")
     if not consume_oauth_state(state):
