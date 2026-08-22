@@ -1,6 +1,6 @@
 from app.models.users import User
-from app.models.oauth_accounts import OAuthAccount
 from urllib.parse import urlparse, parse_qs
+from app.models.oauth_accounts import OAuthAccount
 
 
 def test_new_google_oauth_user_logs_in(client, db_session, mock_google_oauth,mock_consume_oauth_states):
