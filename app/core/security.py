@@ -1,3 +1,15 @@
+"""
+Core security primitives shared across the auth system: password hashing
+(Argon2), JWT access tokens (RS256, asymmetric so only this service can
+issue tokens but any service with the public key can verify them),
+refresh token generation/hashing, breach-checking via Have I Been Pwned,
+and audit logging.
+
+Refresh tokens are stored hashed (never raw) in the database, mirroring
+how passwords are handled — if the database were ever compromised, stored
+refresh tokens couldn't be used directly to authenticate as a user.
+"""
+
 from datetime import timedelta, timezone, datetime
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
@@ -14,6 +26,9 @@ from app.models.audit_logs import AuditLog
 
 private_key = Path(settings.keys_directory / "private_key.pem").read_text()
 public_key = Path(settings.keys_directory / "public_key.pem").read_text()
+# RS256 (asymmetric) instead of HS256: only this service holds the private
+# key needed to issue tokens, but any other service can verify tokens using
+# just the public key, without being able to forge new ones.
 ph = PasswordHasher()
 
 def hash_password(password: str) -> str:
@@ -47,6 +62,8 @@ def check_password_breach(password: str) -> int:
     response = requests.get(f"https://api.pwnedpasswords.com/range/{prefix}")
     
     if response.status_code != 200:
+        # Fails closed: if HIBP is unreachable, signup/password-reset should
+        # error out rather than silently skip the breach check.
         raise Exception("Error checking password breach status.")
     
     for line in response.text.splitlines():
@@ -56,12 +73,24 @@ def check_password_breach(password: str) -> int:
     return 0
 
 def generate_refresh_token() -> str:
+    """
+        Generates a cryptographically secure random URL-safe string.
+        Despite the name, this is reused throughout the codebase anywhere a
+        random token is needed — email verification, password reset, OAuth
+        state, and recovery codes — not just refresh tokens.
+    """
     return secrets.token_urlsafe(64)
 
 def hash_refresh_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 def revoke_all_refresh_tokens(user_id: str, db: Session):
+    """
+        Marks all of a user's refresh tokens as revoked. Does NOT touch
+        tokens_valid_after — callers that also need to invalidate already-issued
+        access tokens (not just refresh tokens) must set that separately.
+        Used by: reset_password, delete_all_sessions, update_user_roles.
+    """
     db.query(RefreshToken).filter(RefreshToken.user_id == user_id).update({"revoked": True})
     db.commit()
 

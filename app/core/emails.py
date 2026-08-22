@@ -1,3 +1,12 @@
+"""
+Transactional email sending via Resend: email verification and password
+reset links.
+
+NOTE: Links are currently hardcoded to localhost:8000 — must be replaced
+with a configurable base URL (settings.app_base_url or similar) before
+deployment, since this won't resolve for real users.
+"""
+
 import resend
 from app.config import settings
 
@@ -5,7 +14,7 @@ resend.api_key = settings.resend_api_key
 resend_email = settings.resend_email_address
 
 def send_verification_email(email,verification_token):
-    link = f"http://localhost:8000/auth/verify-email?token={verification_token}"
+    link = f"{settings.app_base_url}/auth/verify-email?token={verification_token}"
     html_body = f"""
     <p>Hi,</p>
     <p> Please verify your email by clicking the link below:</p>
@@ -20,7 +29,7 @@ def send_verification_email(email,verification_token):
     })
 
 def send_password_reset_email(email,reset_token):
-    link = f"http://localhost:8000/reset-password?token={reset_token}"
+    link = f"{settings.app_base_url}/auth/reset-password?token={reset_token}"
     html_body = f"""
     <p>Hi,</p>
     <p> You requested a reset of passwords, please follow the below link to reset your password</p>

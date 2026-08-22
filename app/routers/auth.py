@@ -1,7 +1,22 @@
+"""
+Authentication routes: signup, login/logout, refresh token rotation,
+email verification, password reset, MFA (TOTP + recovery codes),
+Google OAuth, and session management.
+
+Conventions used throughout this file:
+- Emails are always lowercased before storage or lookup, to keep
+  matching case-insensitive.
+- Rate limiting (via check_rate_limit) runs before any other validation
+  on routes that are public/unauthenticated attack surfaces, so a bad
+  actor can't rack up expensive DB queries by hammering these routes.
+- Every state-changing auth event is recorded via log_audit_event
+  for security auditing.
+"""
+
 import requests
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, HTMLResponse
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 from app.config import settings
@@ -66,10 +81,11 @@ def signup(user: UserCreate, full_request:Request, db: Session = Depends(get_db)
 #LOGIN ROUTE
 @router.post("/login", response_model=Token | MFAChallengeResponse)
 def login(login_data: LoginRequest,full_request: Request,db: Session = Depends(get_db)):
+    # Keyed on email (not IP) so credential-stuffing attempts against one specific account are throttled regardless of which IP they come from
     check_rate_limit(f"login: {login_data.email.lower()}", limit = 5, window_seconds = 300)
     user = db.query(User).filter(User.email == login_data.email.lower()).first()
     if not user or not user.hashed_password or not verify_password(user.hashed_password, login_data.password):
-        log_audit_event(db, user.id if user else None, "login_failed_invalid_email",full_request.client.host,full_request.headers.get("user-agent"),)
+        log_audit_event(db, user.id if user else None, "login_failed_invalid_user",full_request.client.host,full_request.headers.get("user-agent"),)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
@@ -102,12 +118,12 @@ def refresh(full_request: Request, refresh_input: RefreshRequest, db: Session = 
     access_token = create_access_token({"sub": str(user.id)})
     new_refresh_token = generate_refresh_token()
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
-    
-    # Revoke the old refresh token
+
+    # Rotate refresh tokens on every use: revoke the old one and issue a new one.
+    # If a stolen refresh token is ever used after the legitimate one, the old
+    # token will already be revoked, which is a signal of token theft.
     refresh_token_row.revoked = True
     db.add(refresh_token_row)
-    
-    # Store the new refresh token
     new_refresh_token_row = RefreshToken(user_id=user.id, token_hash=hash_refresh_token(new_refresh_token), expires_at=expires_at, revoked=False,device_info = full_request.headers.get("user-agent"))
     db.add(new_refresh_token_row)
     
@@ -209,12 +225,33 @@ def reset_password(request: ResetPasswordRequest, full_request: Request,db: Sess
     user = db.query(User).filter(User.id==token_row.user_id).first()
     user.hashed_password = hash_password(request.new_password)
     token_row.is_used = True
-    #After old password is reset, revoke all refresh tokens. 
+    # Revoke all sessions after a password reset, since the old password may
+    # have been compromised. Anyone using a previously-issued token should be
+    # forced to re-authenticate with the new password.
     db.query(RefreshToken).filter(RefreshToken.user_id == user.id,RefreshToken.revoked == False,).update({"revoked":True})
     user.tokens_valid_after = datetime.now(timezone.utc)
     db.commit()
-    log_audit_event(db, user.id,"reset_password",full_request.client.host,full_request.headers.get("user-agent"))
+    log_audit_event(db, user.id,"reset_password_successful",full_request.client.host,full_request.headers.get("user-agent"))
     return {"message": "Password reset successfully"}
+
+@router.get("/reset-password", response_class=HTMLResponse)
+def reset_password_form(token: str):
+    """
+    Minimal server-rendered form for password reset, so the link in the
+    reset email is directly clickable rather than requiring a frontend.
+    """
+    return f"""
+    <html>
+        <body>
+            <h2>Reset your password</h2>
+            <form method="post" action="/auth/reset-password">
+                <input type="hidden" name="token" value="{token}">
+                <input type="password" name="new_password" placeholder="New password" required>
+                <button type="submit">Reset Password</button>
+            </form>
+        </body>
+    </html>
+    """
 
 #GENERATING MFA CODES THAT USER NEEDS TO CONFIRM ARE WORKING BEFORE TURNING ON MFA
 @router.post("/mfa/setup")
@@ -233,7 +270,7 @@ def setup_mfa(current_user: User = Depends(get_current_user), db: Session = Depe
         db.commit()
     return {"secret": secret, "recovery_codes": recovery_codes, "provisioning_url": provisioning_url}
 
-# TURNING OFF MULTI FACTOR AUTHENTICATION
+# TURNING OFF MULTI-FACTOR AUTHENTICATION
 @router.post("/mfa/disable")
 def disable_mfa(request: MFADisableRequest,full_request: Request,current_user: User = Depends(get_current_user), db: Session = Depends(get_db), _verified: User = Depends(require_verified)):
     totp = pyotp.totp.TOTP(current_user.mfa_secret)
@@ -272,6 +309,8 @@ def mfa_login_verify(request: MFALoginVerifyRequest, full_request: Request,db: S
 
     if not totp.verify(request.code):
         #fall back to recovery code
+        # Recovery codes let a user log in if they've lost access to their
+        # authenticator app; each one is single-use.
         code_hash = hash_refresh_token(request.code)
         recovery = db.query(RecoveryCode).filter(
             RecoveryCode.user_id == user.id,
@@ -376,12 +415,17 @@ def delete_single_session(session_id: str, db: Session = Depends(get_db), curren
     if not session_row:
         raise HTTPException(status_code = 404, detail = "Session not found")
     session_row.revoked = True
+    # Note: tokens_valid_after is deliberately NOT updated here. It's a per-user
+    # field, so setting it would invalidate access tokens for ALL sessions, not
+    # just this one — defeating the purpose of single-session revocation.
     db.commit()
     return None
 
 @router.delete("/me/sessions", status_code = status.HTTP_204_NO_CONTENT)
 def delete_all_sessions(current_user: User = Depends(get_current_user),db: Session = Depends(get_db)):
     db.query(RefreshToken).filter(RefreshToken.user_id == current_user.id,RefreshToken.revoked == False).update({"revoked": True})
+    # Unlike single-session revocation, this invalidates ALL of the user's
+    # existing access tokens too, since every session is being revoked at once.
     current_user.tokens_valid_after = datetime.now(timezone.utc)
     db.commit()
     return None

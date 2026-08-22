@@ -16,5 +16,5 @@ class Settings(BaseSettings):
     google_client_id: str
     google_client_secret: str
     google_redirect_uri: str
-
+    app_base_url: str
 settings = Settings()
