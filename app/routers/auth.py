@@ -239,19 +239,37 @@ def reset_password_form(token: str):
     """
     Minimal server-rendered form for password reset, so the link in the
     reset email is directly clickable rather than requiring a frontend.
+    Submits via JS as JSON to match the existing POST /auth/reset-password
+    route's expected body, rather than a standard form-encoded POST.
     """
     return f"""
     <html>
         <body>
             <h2>Reset your password</h2>
-            <form method="post" action="/auth/reset-password">
-                <input type="hidden" name="token" value="{token}">
-                <input type="password" name="new_password" placeholder="New password" required>
+            <form id="reset-form">
+                <input type="password" id="new_password" placeholder="New password" required>
                 <button type="submit">Reset Password</button>
             </form>
+            <p id="message"></p>
+            <script>
+                document.getElementById("reset-form").addEventListener("submit", async function(e) {{
+                    e.preventDefault();
+                    const response = await fetch("/auth/reset-password", {{
+                        method: "POST",
+                        headers: {{ "Content-Type": "application/json" }},
+                        body: JSON.stringify({{
+                            token: "{token}",
+                            new_password: document.getElementById("new_password").value
+                        }})
+                    }});
+                    const data = await response.json();
+                    document.getElementById("message").innerText = data.detail || data.message;
+                }});
+            </script>
         </body>
     </html>
     """
+
 
 #GENERATING MFA CODES THAT USER NEEDS TO CONFIRM ARE WORKING BEFORE TURNING ON MFA
 @router.post("/mfa/setup")
