@@ -1,3 +1,9 @@
+"""
+FastAPI dependencies for authentication and authorization: extracting and
+validating the current user from a JWT, and role/verification-based access
+control for protected routes.
+"""
+
 from fastapi.security import OAuth2PasswordBearer
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -31,11 +37,20 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if user is None:
         raise credentials_exception
     iat = payload.get("iat")
+    # Tokens issued before tokens_valid_after are rejected even if not expired —
+    # this is how logout-all-sessions, password reset, and role changes take
+    # effect immediately instead of waiting for natural token expiry.
     if user.tokens_valid_after and (iat is None or iat < user.tokens_valid_after):
         raise credentials_exception
     return user
 
 def require_role(required_role: str):
+    """
+       Checks roles embedded in the JWT itself, not a fresh DB query — faster,
+       but means a role change won't take effect until the user's token is
+       reissued. This is mitigated by tokens_valid_after being bumped on role
+       change (see admin.py's update_user_roles), which forces reauthentication.
+    """
     def role_checker(current_user: User = Depends(get_current_user), payload: dict = Depends(get_token_payload)) -> User:
         token_roles = payload.get("roles", [])
         if required_role not in token_roles:
