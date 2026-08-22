@@ -68,3 +68,7 @@ def test_reused_state_rejected(client, db_session,mock_google_oauth):
     assert response.status_code == 200
     response = client.get(f"/auth/oauth/google/callback?code=test-code&state={state}")
     assert response.status_code == 400
+
+def test_google_token_exchange_failure(client, db_session,mock_consume_oauth_states,mock_google_token_exchange_failure):
+    response = client.get("/auth/oauth/google/callback?code=test-code&state=valid-state")
+    assert response.status_code == 400

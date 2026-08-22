@@ -322,6 +322,8 @@ def google_oauth_callback(full_request:Request,code: str = None, state: str = No
         "redirect_uri": settings.google_redirect_uri,
         "grant_type": "authorization_code",
     })
+    if token_response.status_code != 200:
+        raise HTTPException(status_code=400, detail="Failed to exchange authorization code")
     google_tokens = token_response.json()
 
     # Fetch User Profile and throw error if Gmail is not verified

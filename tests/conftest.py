@@ -86,3 +86,10 @@ def mock_google_oauth():
 def mock_consume_oauth_states():
     with patch("app.routers.auth.consume_oauth_state", return_value = True) as mock:
         yield mock
+
+@pytest.fixture()
+def mock_google_token_exchange_failure():
+    with patch("app.routers.auth.requests.post") as mock:
+        mock.return_value.status_code = 400
+        mock.return_value.json.return_value = {"error": "Unauthorized"}
+        yield mock
