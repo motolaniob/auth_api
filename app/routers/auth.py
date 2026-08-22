@@ -31,7 +31,9 @@ from app.models.refresh_token import RefreshToken
 from app.models.password_reset_token import PasswordResetToken
 from app.models.recovery_code import RecoveryCode
 from app.schemas.user import UserCreate, UserResponse
-from app.schemas.auth import RefreshRequest, Token, LoginRequest, ResendVerificationRequest, ForgotPasswordRequest, ResetPasswordRequest, MFAChallengeResponse, MFAVerifyRequest, MFALoginVerifyRequest, MFADisableRequest, SessionOut
+from app.schemas.auth import RefreshRequest, Token, LoginRequest, ResendVerificationRequest, ForgotPasswordRequest, \
+    ResetPasswordRequest, MFAChallengeResponse, MFAVerifyRequest, MFALoginVerifyRequest, MFADisableRequest, SessionOut, \
+    MFASetupResponse, MessageResponse
 from app.models.email_verification_token import EmailVerificationToken
 from app.core.security import (
     hash_password,
@@ -151,7 +153,7 @@ def logout(logout_input: RefreshRequest, db: Session = Depends(get_db)):
     return None
 
 # EMAIL VERIFICATION
-@router.get("/verify-email")
+@router.get("/verify-email", response_model=MessageResponse)
 def verify_email(token:str, db: Session = Depends(get_db)):
     token_hash = hash_refresh_token(token) #Reusing refresh token module to hash the verification token
     token_row = db.query(EmailVerificationToken).filter(EmailVerificationToken.token_hash == token_hash).first()
@@ -165,7 +167,7 @@ def verify_email(token:str, db: Session = Depends(get_db)):
     return {"message": "Email verified successfully"}
 
 # RESENDING EMAIL VERIFICATION
-@router.post("/resend-verification")
+@router.post("/resend-verification", response_model=MessageResponse)
 def resend_verification(request: ResendVerificationRequest,full_request: Request, db: Session = Depends(get_db)):
     check_rate_limit(key=f"resend_verification: {full_request.client.host}", limit=5, window_seconds=300)
     user = db.query(User).filter(User.email == request.email.lower()).first()
@@ -188,7 +190,7 @@ def resend_verification(request: ResendVerificationRequest,full_request: Request
     return {"message": "If this account exists and is unverified, a new link has been sent to you"}
 
 #FORGOT PASSWORD
-@router.post("/forgot-password")
+@router.post("/forgot-password", response_model=MessageResponse)
 def forgot_password(request: ForgotPasswordRequest,full_request: Request, db: Session = Depends(get_db)):
     check_rate_limit(key=f"forgot_password: {full_request.client.host}", limit=5, window_seconds=300)
     user = db.query(User).filter(User.email == request.email.lower()).first()
@@ -214,7 +216,7 @@ def forgot_password(request: ForgotPasswordRequest,full_request: Request, db: Se
     return {"message": "If account exists, a password reset link has been sent to your email address"}
 
 #RESET PASSWORD
-@router.post("/reset-password")
+@router.post("/reset-password", response_model=MessageResponse)
 def reset_password(request: ResetPasswordRequest, full_request: Request,db: Session = Depends(get_db)):
     token_hash = hash_refresh_token(request.token)
     token_row = db.query(PasswordResetToken).filter(PasswordResetToken.token_hash == token_hash).first()
@@ -272,7 +274,7 @@ def reset_password_form(token: str):
 
 
 #GENERATING MFA CODES THAT USER NEEDS TO CONFIRM ARE WORKING BEFORE TURNING ON MFA
-@router.post("/mfa/setup")
+@router.post("/mfa/setup", response_model=MFASetupResponse)
 def setup_mfa(current_user: User = Depends(get_current_user), db: Session = Depends(get_db), _verified: User = Depends(require_verified)):
     secret = pyotp.random_base32()
     current_user.mfa_secret = secret
@@ -289,7 +291,7 @@ def setup_mfa(current_user: User = Depends(get_current_user), db: Session = Depe
     return {"secret": secret, "recovery_codes": recovery_codes, "provisioning_url": provisioning_url}
 
 # TURNING OFF MULTI-FACTOR AUTHENTICATION
-@router.post("/mfa/disable")
+@router.post("/mfa/disable", response_model=MessageResponse)
 def disable_mfa(request: MFADisableRequest,full_request: Request,current_user: User = Depends(get_current_user), db: Session = Depends(get_db), _verified: User = Depends(require_verified)):
     totp = pyotp.totp.TOTP(current_user.mfa_secret)
     if not totp.verify(request.code):
@@ -302,7 +304,7 @@ def disable_mfa(request: MFADisableRequest,full_request: Request,current_user: U
     return {"message": "MFA is disabled"}
 
 # TURNING ON MFA
-@router.post("/mfa/verify-setup")
+@router.post("/mfa/verify-setup", response_model=MessageResponse)
 def verify_mfa_setup(request:MFAVerifyRequest ,current_user: User = Depends(get_current_user), db: Session = Depends(get_db), _verified: User = Depends(require_verified)):
     totp = pyotp.TOTP(current_user.mfa_secret)
     if not totp.verify(request.code):

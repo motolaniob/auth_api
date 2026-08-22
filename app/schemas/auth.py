@@ -44,3 +44,11 @@ class SessionOut(BaseModel):
     device_info: str | None
 
     model_config = ConfigDict(form_attributes=True)
+
+class MessageResponse(BaseModel):
+    message: str
+
+class MFASetupResponse(BaseModel):
+    secret: str
+    recovery_codes: list[str]
+    provisioning_url: str
