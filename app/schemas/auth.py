@@ -1,5 +1,6 @@
 from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
+from uuid import UUID
 
 class Token(BaseModel):
     access_token: str
@@ -43,7 +44,7 @@ class SessionOut(BaseModel):
     expires_at: datetime
     device_info: str | None
 
-    model_config = ConfigDict(form_attributes=True)
+    model_config = ConfigDict(from_attributes=True)
 
 class MessageResponse(BaseModel):
     message: str
