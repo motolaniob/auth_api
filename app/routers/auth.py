@@ -314,7 +314,7 @@ def verify_mfa_setup(request:MFAVerifyRequest ,current_user: User = Depends(get_
     return {"message": "MFA is enabled"}
 
 # LOGGING IN WITH MFA
-@router.post("/mfa/login-verify")
+@router.post("/mfa/login-verify", response_model=Token)
 def mfa_login_verify(request: MFALoginVerifyRequest, full_request: Request,db: Session = Depends(get_db)):
     payload = decode_access_token(request.challenge_token)
     if not payload.get("mfa_pending"):
@@ -348,7 +348,7 @@ def mfa_login_verify(request: MFALoginVerifyRequest, full_request: Request,db: S
     return give_user_tokens(db, user,device_info=full_request.headers.get("user-agent"))
 
 # Generate google login url which has state variable that will be used for csrf verification when response comes back from google.
-@router.get("/oauth/google/login")
+@router.get("/oauth/google/login",response_class=RedirectResponse)
 def google_login():
     state = generate_refresh_token()[:32] #reusing generate_refresh_token to generate random string for oauth state
     store_oauth_state(state)
@@ -364,7 +364,7 @@ def google_login():
     return RedirectResponse(google_auth_url)
 
 # Google Login Process after getting response from Google oauth
-@router.get("/oauth/google/callback")
+@router.get("/oauth/google/callback", response_model=Token)
 def google_oauth_callback(full_request:Request,code: str = None, state: str = None,error: str = None, db: Session = Depends(get_db)):
     check_rate_limit(key=f"oauth_callback: {full_request.client.host}", limit=5, window_seconds=300)
     is_new_user = False
