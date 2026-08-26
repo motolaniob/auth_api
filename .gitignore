@@ -1,5 +1,6 @@
 .venv/
 venv/
 .env
+.env.docker
 *.pem
 __pycache__/
