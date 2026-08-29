@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import RedirectResponse, HTMLResponse
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
+from jose.exceptions import ExpiredSignatureError, JWTError
 from app.config import settings
 from app.core.emails import send_password_reset_email, send_verification_email
 from app.core.dependencies import get_current_user, require_verified
@@ -132,13 +133,13 @@ def refresh(full_request: Request, refresh_input: RefreshRequest, db: Session = 
     """
     refresh_token_hash = hash_refresh_token(refresh_input.refresh_token)
     refresh_token_row = db.query(RefreshToken).filter(RefreshToken.token_hash == refresh_token_hash).first()
-    
+
     if not refresh_token_row or refresh_token_row.revoked or refresh_token_row.expires_at < datetime.now(timezone.utc):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired refresh token",
         )
-    
+
     user = db.query(User).filter(User.id == refresh_token_row.user_id).first()
     if not user:
         raise HTTPException(
@@ -321,6 +322,7 @@ def setup_mfa(current_user: User = Depends(get_current_user), db: Session = Depe
         codes. MFA is not yet enforced at this point — call
         POST /mfa/verify-setup with a valid code to actually turn it on.
     """
+    db.query(RecoveryCode).filter(RecoveryCode.user_id == current_user.id).delete()
     secret = pyotp.random_base32()
     current_user.mfa_secret = secret
     db.commit()
@@ -369,7 +371,11 @@ def mfa_login_verify(request: MFALoginVerifyRequest, full_request: Request,db: S
         from POST /login, with a valid TOTP code. A single-use
         recovery code as a fallback if the authenticator app is unavailable.
     """
-    payload = decode_access_token(request.challenge_token)
+    try:
+        payload = decode_access_token(request.challenge_token)
+    except(ExpiredSignatureError, JWTError):
+        log_audit_event(db, None, "failed_mfa_login", full_request.client.host, full_request.headers.get("user-agent"))
+        raise HTTPException(status_code = 401, detail = "Invalid challenge token")
     if not payload.get("mfa_pending"):
         log_audit_event(db,None,"failed_mfa_login",full_request.client.host,full_request.headers.get("user-agent"))
         raise HTTPException(status_code = 400, detail = "Invalid challenge token")

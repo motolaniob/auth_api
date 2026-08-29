@@ -54,6 +54,7 @@ def decode_access_token(token: str) -> dict:
     """Decode a JWT access token."""
     return jwt.decode(token, public_key, algorithms=["RS256"])
 
+
  
 def check_password_breach(password: str) -> int:
     """Check if a password has been breached using the Have I Been Pwned API."""
