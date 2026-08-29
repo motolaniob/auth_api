@@ -12,3 +12,5 @@ redis==8.0.1
 PyOTP==2.10.0
 email-validator==2.3.0
 alembic==1.18.5
+pytest==9.1.1
+httpx2==2.12.0
