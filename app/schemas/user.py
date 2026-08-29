@@ -4,8 +4,8 @@ from datetime import datetime
 from app.core.security import check_password_breach
 
 class UserCreate(BaseModel):
-    email: EmailStr
-    password: str    
+    email: EmailStr = Field(examples=["jane.doe@example.com"])
+    password: str = Field(examples=["correct-horse-battery-staple"])
     @field_validator('password')
     @classmethod
     def password_strength(cls, v):
@@ -16,8 +16,8 @@ class UserCreate(BaseModel):
         return v
     
 class UserResponse(BaseModel):
-    id: UUID
-    email: EmailStr
+    id: UUID = Field(examples=["3fa85f64-5717-4562-b3fc-2c963f66afa6"])
+    email: EmailStr = Field(examples=["jane.doe@example.com"])
     created_at: datetime
     updated_at: datetime
     is_active: bool
