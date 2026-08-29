@@ -1,5 +1,5 @@
 """
-Admin-only routes: user listing, role management, and admin-initiated
+Admin-only routes: get all current users, role management, and admin-initiated
 MFA disable (e.g. for account recovery support tickets).
 All routes here require the "admin" role via require_role("admin").
 Role changes and admin-initiated MFA disables are always logged via
@@ -72,8 +72,7 @@ def update_user_roles(user_id:str, new_role_names:list[str], full_request: Reque
     log_audit_event(db, user.id, "role_changed", full_request.client.host, full_request.headers.get("user-agent") ,event_metadata= {"old_roles": [r.name for r in old_roles], "new_roles": new_role_names, "changed_by": str(current_user.id)})
     return user
 
-# Lets an admin disable MFA on a user's behalf — e.g. when a user is locked
-# out after losing both their authenticator device and recovery codes.
+
 @router.post("/users/{user_id}/mfa/disable", response_model=MessageResponse, responses={403: {"description": "Not an admin"}, 404: {"description": "User not found"}})
 def admin_disable_mfa(user_id: str, full_request: Request,current_user: User = Depends(require_role("admin")), db: Session = Depends(get_db)):
     """Disable MFA for a given user on their behalf. Requires the admin role."""

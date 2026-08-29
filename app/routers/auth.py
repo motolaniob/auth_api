@@ -55,7 +55,6 @@ router = APIRouter()
 def signup(user: UserCreate, full_request:Request, db: Session = Depends(get_db)):
     """
         Create a new account with an email and password.
-
         Sends an email verification link on success. The account is usable
         immediately (partial-access model). Some routes require a verified
         email via require_verified, but signup and login do not.
@@ -100,11 +99,9 @@ def signup(user: UserCreate, full_request:Request, db: Session = Depends(get_db)
 def login(login_data: LoginRequest,full_request: Request,db: Session = Depends(get_db)):
     """
         Log in with email and password.
-
         Returns an access/refresh token pair directly if MFA is not enabled.
-        If MFA is enabled, returns a short-lived challenge token instead —
-        complete login via POST /mfa/login-verify with that token and a
-        valid TOTP or recovery code.
+        If MFA is enabled, returns a short-lived challenge token instead the user needs to
+        complete login via POST /mfa/login-verify with that token and a valid TOTP or recovery code.
     """
     # Keyed on email (not IP) so credential-stuffing attempts against one specific account are throttled regardless of which IP they come from
     check_rate_limit(f"login: {login_data.email.lower()}", limit = 5, window_seconds = 300)
@@ -127,9 +124,8 @@ def login(login_data: LoginRequest,full_request: Request,db: Session = Depends(g
 def refresh(full_request: Request, refresh_input: RefreshRequest, db: Session = Depends(get_db)):
     """
         Exchange a valid refresh token for a new access/refresh token pair.
-
         Refresh tokens are single-use and rotated on every call: the token
-        passed in is revoked, and a new one is issued. Reusing an
+        passed in is revoked, and a new one is issued. Trying to use an
         already-rotated (revoked) token is rejected, this is a signal of
         possible token theft, since the legitimate client would already
         hold the newer token.
@@ -149,22 +145,14 @@ def refresh(full_request: Request, refresh_input: RefreshRequest, db: Session = 
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
-    
-    access_token = create_access_token({"sub": str(user.id)})
-    new_refresh_token = generate_refresh_token()
-    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
-
     # Rotate refresh tokens on every use: revoke the old one and issue a new one.
     # If a stolen refresh token is ever used after the legitimate one, the old
     # token will already be revoked, which is a signal of token theft.
     refresh_token_row.revoked = True
     db.add(refresh_token_row)
-    new_refresh_token_row = RefreshToken(user_id=user.id, token_hash=hash_refresh_token(new_refresh_token), expires_at=expires_at, revoked=False,device_info = full_request.headers.get("user-agent"))
-    db.add(new_refresh_token_row)
-    
     db.commit()
-    
-    return {"access_token": access_token, "token_type": "bearer", "refresh_token": new_refresh_token}
+    #generate new tokens for the user
+    return give_user_tokens(db, user, device_info=full_request.headers.get("user-agent"))
 
 #LOGOUT ROUTE
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, responses={401: {"description": "Invalid or already revoked refresh token"}})
@@ -207,7 +195,7 @@ def resend_verification(request: ResendVerificationRequest,full_request: Request
     """
        Resend the email verification link. Always returns the same generic
        message regardless of whether the account exists or is already
-       verified, to avoid leaking account existence.
+       verified, to avoid leaking user emails.
     """
     check_rate_limit(key=f"resend_verification: {full_request.client.host}", limit=5, window_seconds=300)
     user = db.query(User).filter(User.email == request.email.lower()).first()
@@ -267,7 +255,7 @@ def reset_password(request: ResetPasswordRequest, full_request: Request,db: Sess
         Set a new password using a valid reset token from the forgot-password
         email. On success, revokes all existing refresh tokens for the user
         and bumps tokens_valid_after, invalidating every previously issued
-        access token too — since the old password may have been compromised,
+        access token since the old password may have been compromised,
         anyone using a previously-issued token is forced to re-authenticate.
     """
     token_hash = hash_refresh_token(request.token)
@@ -378,7 +366,7 @@ def verify_mfa_setup(request:MFAVerifyRequest ,current_user: User = Depends(get_
 def mfa_login_verify(request: MFALoginVerifyRequest, full_request: Request,db: Session = Depends(get_db)):
     """
         Complete login for an MFA-enabled account using the challenge token
-        from POST /login, plus either a valid TOTP code or a single-use
+        from POST /login, with a valid TOTP code. A single-use
         recovery code as a fallback if the authenticator app is unavailable.
     """
     payload = decode_access_token(request.challenge_token)
@@ -393,7 +381,7 @@ def mfa_login_verify(request: MFALoginVerifyRequest, full_request: Request,db: S
     totp = pyotp.TOTP(user.mfa_secret)
 
     if not totp.verify(request.code):
-        #fall back to recovery code
+        # fall back to recovery code
         # Recovery codes let a user log in if they've lost access to their
         # authenticator app; each one is single-use.
         code_hash = hash_refresh_token(request.code)
@@ -438,8 +426,7 @@ def google_login():
 def google_oauth_callback(full_request:Request,code: str = None, state: str = None,error: str = None, db: Session = Depends(get_db)):
     """
         Handles Google's redirect after the user approves or denies consent.
-        Not meant to be called directly — Google's redirect drives this.
-
+        Not meant to be called directly. Google's redirect drives this.
         Validates the CSRF state token, exchanges the authorization code for
         Google tokens, fetches the user's verified email, and either logs in
         an existing linked account, auto-links an existing password account
