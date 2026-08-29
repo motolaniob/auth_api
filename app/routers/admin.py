@@ -27,13 +27,21 @@ def list_all_users(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("admin")),
 ):
+    """List every user account. Requires the admin role."""
     return db.query(User).all()
 
-@router.patch("/users/{user_id}/roles", response_model=UserResponse)
+@router.patch("/users/{user_id}/roles", response_model=UserResponse,
+    responses={
+        400: {"description": "One or more of the given role names are invalid"},
+        403: {"description": "Not an admin, or email not verified"},
+        404: {"description": "User not found"},})
 def update_user_roles(user_id:str, new_role_names:list[str], full_request: Request,db: Session = Depends(get_db),
     current_user: User = Depends(require_role("admin")), _verified: User = Depends(require_verified)):
     """
-    Update the roles of a user.
+        Replace a user's roles with the given list of role names.
+        Takes effect immediately: revokes user's refresh tokens
+        and bumps tokens_valid_after, so the change doesn't wait for the
+        user's current access token to expire naturally.
     """
     user = db.query(User).filter(User.id == uuid.UUID(user_id)).first()
     if not user:
@@ -67,8 +75,9 @@ def update_user_roles(user_id:str, new_role_names:list[str], full_request: Reque
 
 # Lets an admin disable MFA on a user's behalf — e.g. when a user is locked
 # out after losing both their authenticator device and recovery codes.
-@router.post("/users/{user_id}/mfa/disable", response_model=MessageResponse)
+@router.post("/users/{user_id}/mfa/disable", response_model=MessageResponse, responses={403: {"description": "Not an admin"}, 404: {"description": "User not found"}})
 def admin_disable_mfa(user_id: str, full_request: Request,current_user: User = Depends(require_role("admin")), db: Session = Depends(get_db)):
+    """Disable MFA for a given user on their behalf. Requires the admin role."""
     user = db.query(User).filter(User.id== uuid.UUID(user_id)).first()
     if not user:
         raise HTTPException(
