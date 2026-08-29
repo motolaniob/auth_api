@@ -1,7 +1,6 @@
 """
 Admin-only routes: user listing, role management, and admin-initiated
 MFA disable (e.g. for account recovery support tickets).
-
 All routes here require the "admin" role via require_role("admin").
 Role changes and admin-initiated MFA disables are always logged via
 log_audit_event, including which admin performed the action.
