@@ -76,7 +76,7 @@ This starts three services: the API, PostgreSQL, and Redis. On first boot, the a
 
 The API will be available at `http://localhost:8000`. Interactive API docs (Swagger UI) are at `http://localhost:8000/docs`.
 
-### 5. Run tests
+### 5. Run tests locally not on the container
 
 ```bash
 pytest
