@@ -47,8 +47,19 @@ router = APIRouter()
 
 
 #SIGNUP ROUTE
-@router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED,
+    responses={
+        400: {"description": "Email already registered"},
+        429: {"description": "Too many signup attempts from this IP"},
+    },)
 def signup(user: UserCreate, full_request:Request, db: Session = Depends(get_db)):
+    """
+        Create a new account with an email and password.
+
+        Sends an email verification link on success. The account is usable
+        immediately (partial-access model). Some routes require a verified
+        email via require_verified, but signup and login do not.
+    """
     check_rate_limit(key = f"signup: {full_request.client.host}", limit = 5, window_seconds = 300)
     existing_user = db.query(User).filter(User.email == user.email.lower()).first()
     if existing_user:
@@ -81,8 +92,20 @@ def signup(user: UserCreate, full_request:Request, db: Session = Depends(get_db)
     return new_user
 
 #LOGIN ROUTE
-@router.post("/login", response_model=Token | MFAChallengeResponse)
+@router.post("/login", response_model=Token | MFAChallengeResponse,
+    responses={
+        401: {"description": "Invalid email or password"},
+        429: {"description": "Too many login attempts for this email"},
+    },)
 def login(login_data: LoginRequest,full_request: Request,db: Session = Depends(get_db)):
+    """
+        Log in with email and password.
+
+        Returns an access/refresh token pair directly if MFA is not enabled.
+        If MFA is enabled, returns a short-lived challenge token instead —
+        complete login via POST /mfa/login-verify with that token and a
+        valid TOTP or recovery code.
+    """
     # Keyed on email (not IP) so credential-stuffing attempts against one specific account are throttled regardless of which IP they come from
     check_rate_limit(f"login: {login_data.email.lower()}", limit = 5, window_seconds = 300)
     user = db.query(User).filter(User.email == login_data.email.lower()).first()
@@ -99,8 +122,18 @@ def login(login_data: LoginRequest,full_request: Request,db: Session = Depends(g
     log_audit_event(db, user.id, "login_successful",full_request.client.host,full_request.headers.get("user-agent"),)
     return give_user_tokens(db, user,device_info=full_request.headers.get("user-agent"))
 
-@router.post("/refresh", response_model=Token)
+@router.post("/refresh", response_model=Token,
+    responses={401: {"description": "Invalid or expired refresh token"}, 404: {"description": "User not found"}},)
 def refresh(full_request: Request, refresh_input: RefreshRequest, db: Session = Depends(get_db)):
+    """
+        Exchange a valid refresh token for a new access/refresh token pair.
+
+        Refresh tokens are single-use and rotated on every call: the token
+        passed in is revoked, and a new one is issued. Reusing an
+        already-rotated (revoked) token is rejected, this is a signal of
+        possible token theft, since the legitimate client would already
+        hold the newer token.
+    """
     refresh_token_hash = hash_refresh_token(refresh_input.refresh_token)
     refresh_token_row = db.query(RefreshToken).filter(RefreshToken.token_hash == refresh_token_hash).first()
     
@@ -134,8 +167,9 @@ def refresh(full_request: Request, refresh_input: RefreshRequest, db: Session = 
     return {"access_token": access_token, "token_type": "bearer", "refresh_token": new_refresh_token}
 
 #LOGOUT ROUTE
-@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, responses={401: {"description": "Invalid or already revoked refresh token"}})
 def logout(logout_input: RefreshRequest, db: Session = Depends(get_db)):
+    """Revoke a single refresh token, logging out that one session."""
     refresh_token_hash = hash_refresh_token(logout_input.refresh_token)
     refresh_token_row = db.query(RefreshToken).filter(RefreshToken.token_hash == refresh_token_hash).first()
     
@@ -153,8 +187,9 @@ def logout(logout_input: RefreshRequest, db: Session = Depends(get_db)):
     return None
 
 # EMAIL VERIFICATION
-@router.get("/verify-email", response_model=MessageResponse)
+@router.get("/verify-email", response_model=MessageResponse, responses={400: {"description": "Invalid or expired verification code"}})
 def verify_email(token:str, db: Session = Depends(get_db)):
+    """Verify an email address using the token sent via email at signup."""
     token_hash = hash_refresh_token(token) #Reusing refresh token module to hash the verification token
     token_row = db.query(EmailVerificationToken).filter(EmailVerificationToken.token_hash == token_hash).first()
     if not token_row or token_row.is_used or token_row.expires_at < datetime.now(timezone.utc):
@@ -167,8 +202,13 @@ def verify_email(token:str, db: Session = Depends(get_db)):
     return {"message": "Email verified successfully"}
 
 # RESENDING EMAIL VERIFICATION
-@router.post("/resend-verification", response_model=MessageResponse)
+@router.post("/resend-verification", response_model=MessageResponse, responses={429: {"description": "Too many requests from this IP"}})
 def resend_verification(request: ResendVerificationRequest,full_request: Request, db: Session = Depends(get_db)):
+    """
+       Resend the email verification link. Always returns the same generic
+       message regardless of whether the account exists or is already
+       verified, to avoid leaking account existence.
+    """
     check_rate_limit(key=f"resend_verification: {full_request.client.host}", limit=5, window_seconds=300)
     user = db.query(User).filter(User.email == request.email.lower()).first()
     if not user or user.is_verified:
@@ -190,8 +230,13 @@ def resend_verification(request: ResendVerificationRequest,full_request: Request
     return {"message": "If this account exists and is unverified, a new link has been sent to you"}
 
 #FORGOT PASSWORD
-@router.post("/forgot-password", response_model=MessageResponse)
+@router.post("/forgot-password", response_model=MessageResponse, responses={429: {"description": "Too many requests from this IP"}})
 def forgot_password(request: ForgotPasswordRequest,full_request: Request, db: Session = Depends(get_db)):
+    """
+        Request a password reset email. Always returns the same generic
+        message regardless of whether the account exists, to avoid leaking
+        user emails.
+    """
     check_rate_limit(key=f"forgot_password: {full_request.client.host}", limit=5, window_seconds=300)
     user = db.query(User).filter(User.email == request.email.lower()).first()
     if not user:
@@ -216,8 +261,15 @@ def forgot_password(request: ForgotPasswordRequest,full_request: Request, db: Se
     return {"message": "If account exists, a password reset link has been sent to your email address"}
 
 #RESET PASSWORD
-@router.post("/reset-password", response_model=MessageResponse)
+@router.post("/reset-password", response_model=MessageResponse, responses={400: {"description": "Invalid or expired reset token"}})
 def reset_password(request: ResetPasswordRequest, full_request: Request,db: Session = Depends(get_db)):
+    """
+        Set a new password using a valid reset token from the forgot-password
+        email. On success, revokes all existing refresh tokens for the user
+        and bumps tokens_valid_after, invalidating every previously issued
+        access token too — since the old password may have been compromised,
+        anyone using a previously-issued token is forced to re-authenticate.
+    """
     token_hash = hash_refresh_token(request.token)
     token_row = db.query(PasswordResetToken).filter(PasswordResetToken.token_hash == token_hash).first()
     if not token_row or token_row.is_used or token_row.expires_at < datetime.now(timezone.utc):
@@ -274,8 +326,13 @@ def reset_password_form(token: str):
 
 
 #GENERATING MFA CODES THAT USER NEEDS TO CONFIRM ARE WORKING BEFORE TURNING ON MFA
-@router.post("/mfa/setup", response_model=MFASetupResponse)
+@router.post("/mfa/setup", response_model=MFASetupResponse, responses={403: {"description": "Email not verified"}})
 def setup_mfa(current_user: User = Depends(get_current_user), db: Session = Depends(get_db), _verified: User = Depends(require_verified)):
+    """
+        Begin MFA setup: generates a new TOTP secret and 8 single-use recovery
+        codes. MFA is not yet enforced at this point — call
+        POST /mfa/verify-setup with a valid code to actually turn it on.
+    """
     secret = pyotp.random_base32()
     current_user.mfa_secret = secret
     db.commit()
@@ -291,8 +348,9 @@ def setup_mfa(current_user: User = Depends(get_current_user), db: Session = Depe
     return {"secret": secret, "recovery_codes": recovery_codes, "provisioning_url": provisioning_url}
 
 # TURNING OFF MULTI-FACTOR AUTHENTICATION
-@router.post("/mfa/disable", response_model=MessageResponse)
+@router.post("/mfa/disable", response_model=MessageResponse, responses={400: {"description": "Invalid TOTP code"}, 403: {"description": "Email not verified"}})
 def disable_mfa(request: MFADisableRequest,full_request: Request,current_user: User = Depends(get_current_user), db: Session = Depends(get_db), _verified: User = Depends(require_verified)):
+    """Disable MFA for the current user. Requires a valid TOTP code."""
     totp = pyotp.totp.TOTP(current_user.mfa_secret)
     if not totp.verify(request.code):
         raise HTTPException(status_code = 400, detail = "Invalid code")
@@ -304,8 +362,9 @@ def disable_mfa(request: MFADisableRequest,full_request: Request,current_user: U
     return {"message": "MFA is disabled"}
 
 # TURNING ON MFA
-@router.post("/mfa/verify-setup", response_model=MessageResponse)
+@router.post("/mfa/verify-setup", response_model=MessageResponse, responses={400: {"description": "Invalid TOTP code"}, 403: {"description": "Email not verified"}})
 def verify_mfa_setup(request:MFAVerifyRequest ,current_user: User = Depends(get_current_user), db: Session = Depends(get_db), _verified: User = Depends(require_verified)):
+    """Confirm MFA setup by verifying a TOTP code, turning MFA on."""
     totp = pyotp.TOTP(current_user.mfa_secret)
     if not totp.verify(request.code):
         raise HTTPException(status_code = 400, detail = "Invalid code")
@@ -314,8 +373,14 @@ def verify_mfa_setup(request:MFAVerifyRequest ,current_user: User = Depends(get_
     return {"message": "MFA is enabled"}
 
 # LOGGING IN WITH MFA
-@router.post("/mfa/login-verify", response_model=Token)
+@router.post("/mfa/login-verify", response_model=Token,
+    responses={400: {"description": "Invalid challenge token or code"}, 401: {"description": "Invalid challenge token"}},)
 def mfa_login_verify(request: MFALoginVerifyRequest, full_request: Request,db: Session = Depends(get_db)):
+    """
+        Complete login for an MFA-enabled account using the challenge token
+        from POST /login, plus either a valid TOTP code or a single-use
+        recovery code as a fallback if the authenticator app is unavailable.
+    """
     payload = decode_access_token(request.challenge_token)
     if not payload.get("mfa_pending"):
         log_audit_event(db,None,"failed_mfa_login",full_request.client.host,full_request.headers.get("user-agent"))
@@ -350,6 +415,7 @@ def mfa_login_verify(request: MFALoginVerifyRequest, full_request: Request,db: S
 # Generate google login url which has state variable that will be used for csrf verification when response comes back from google.
 @router.get("/oauth/google/login",response_class=RedirectResponse)
 def google_login():
+    """Redirects to Google's OAuth consent screen to begin the login flow."""
     state = generate_refresh_token()[:32] #reusing generate_refresh_token to generate random string for oauth state
     store_oauth_state(state)
 
@@ -364,8 +430,21 @@ def google_login():
     return RedirectResponse(google_auth_url)
 
 # Google Login Process after getting response from Google oauth
-@router.get("/oauth/google/callback", response_model=Token)
+@router.get("/oauth/google/callback", response_model=Token,
+    responses={
+        400: {"description": "OAuth error, invalid/expired state, token exchange failure, or unverified Google email"},
+        429: {"description": "Too many callback attempts from this IP"},
+    },)
 def google_oauth_callback(full_request:Request,code: str = None, state: str = None,error: str = None, db: Session = Depends(get_db)):
+    """
+        Handles Google's redirect after the user approves or denies consent.
+        Not meant to be called directly — Google's redirect drives this.
+
+        Validates the CSRF state token, exchanges the authorization code for
+        Google tokens, fetches the user's verified email, and either logs in
+        an existing linked account, auto-links an existing password account
+        by matching verified email, or creates a new account.
+    """
     check_rate_limit(key=f"oauth_callback: {full_request.client.host}", limit=5, window_seconds=300)
     is_new_user = False
     # Check if there is an error or if state returned from Google is valid. If it is, remove from set.
@@ -427,10 +506,12 @@ def google_oauth_callback(full_request:Request,code: str = None, state: str = No
 
 @router.get("/me/sessions", response_model = list[SessionOut])
 def list_sessions(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """List the current user's active (non-revoked, non-expired) sessions."""
     return db.query(RefreshToken).filter(RefreshToken.user_id == current_user.id,RefreshToken.revoked == False, RefreshToken.expires_at > datetime.now(timezone
                                                                                                                                                        .utc)).all()
-@router.delete("/me/sessions/{session_id}", status_code = status.HTTP_204_NO_CONTENT)
+@router.delete("/me/sessions/{session_id}", status_code = status.HTTP_204_NO_CONTENT, responses={404: {"description": "Session not found"}})
 def delete_single_session(session_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Revoke one specific session by its ID, logging out that device only."""
     session_row = db.query(RefreshToken).filter(RefreshToken.user_id == current_user.id,RefreshToken.id == session_id,RefreshToken.revoked == False).first()
     if not session_row:
         raise HTTPException(status_code = 404, detail = "Session not found")
@@ -443,8 +524,9 @@ def delete_single_session(session_id: str, db: Session = Depends(get_db), curren
 
 @router.delete("/me/sessions", status_code = status.HTTP_204_NO_CONTENT)
 def delete_all_sessions(current_user: User = Depends(get_current_user),db: Session = Depends(get_db)):
+    """Revoke every session for the current user ("log out everywhere")."""
     db.query(RefreshToken).filter(RefreshToken.user_id == current_user.id,RefreshToken.revoked == False).update({"revoked": True})
-    # Unlike single-session revocation, this invalidates ALL of the user's
+    # Unlike single-session revocation, this invalidates All the user's
     # existing access tokens too, since every session is being revoked at once.
     current_user.tokens_valid_after = datetime.now(timezone.utc)
     db.commit()
