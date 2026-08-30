@@ -129,3 +129,10 @@ def test_admin_can_force_disable_mfa(client, db_session):
     assert response.status_code == 200
     db_session.refresh(target_user)
     assert target_user.mfa_enabled is False
+
+def test_mfa_login_verify_invalid_challenge_token(client, db_session):
+    response = client.post(
+        "/auth/mfa/login-verify",
+        json={"challenge_token": "garbage-not-a-real-token", "code": "123456"},
+    )
+    assert response.status_code == 401
