@@ -72,33 +72,16 @@ The application uses a modular structure that separates API routes, database mod
 ```mermaid
 flowchart TD
     Client[Client] --> API[FastAPI Application]
-<<<<<<< HEAD
     API --> Auth[Authentication Router]
     API --> Users[Users Router]
     API --> Admin[Admin Router]
-    Auth --> Security[Security Utilities]
-    Auth --> Email[Email Services]
-    Auth --> Redis[Redis Services]
-    Users --> DB[(PostgreSQL)]
-    Admin --> DB
-    Auth --> DB
-    Auth --> Redis
-=======
-
-    API --> Auth[Authentication Router]
-    API --> Users[Users Router]
-    API --> Admin[Admin Router]
-
     Auth --> Security[Security Utilities]
     Auth --> Email[Email Services]
     Auth --> RedisServices[Redis Services]
-
     Auth --> DB[(PostgreSQL)]
     Users --> DB
     Admin --> DB
-
     RedisServices --> Redis[(Redis)]
->>>>>>> a5b110d (Additional Readme updates)
 ```
 
 ### Project structure
@@ -227,6 +210,20 @@ Once running:
 | ReDoc documentation | http://localhost:8000/redoc |
 | Health check | http://localhost:8000/health |
 
+## Live test instance
+
+A deployed test instance is available on Railway:
+
+| Resource | URL |
+|---|---|
+| API | https://authapi-production-f0bad98e.up.railway.app |
+| Swagger documentation | https://authapi-production-f0bad98e.up.railway.app/docs |
+| ReDoc documentation | https://authapi-production-f0bad98e.up.railway.app/redoc |
+| OpenAPI schema | https://authapi-production-f0bad98e.up.railway.app/openapi.json |
+| Health check | https://authapi-production-f0bad98e.up.railway.app/health |
+
+This is a test deployment, not a production service. Avoid using real personal data or credentials.
+
 ## API documentation
 
 The API provides interactive documentation through Swagger UI.
@@ -354,7 +351,6 @@ Potential areas for further development include:
 - Improved observability and structured logging.
 - Performance and concurrency testing.
 - Further hardening of authentication and session-management workflows.
-
 
 ## License
 
