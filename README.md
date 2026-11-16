@@ -355,6 +355,7 @@ Potential areas for further development include:
 - Performance and concurrency testing.
 - Further hardening of authentication and session-management workflows.
 
+
 ## License
 
-No open-source license has been added yet. All rights are reserved by the copyright holder unless a license is subsequently provided.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
