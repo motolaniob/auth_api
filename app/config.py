@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     redis_url: str
     debug_mode: bool
     keys_directory: Path
+    private_key: str | None = None
+    public_key: str | None = None
     resend_api_key: str
     resend_email_address: str
     google_client_id: str
