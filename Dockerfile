@@ -22,8 +22,7 @@
     EXPOSE 8000
 
     USER app
-    CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
-
+    CMD ["sh", "-c", "alembic upgrade head && exec python -c \"import os, subprocess; subprocess.run(['uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', os.environ.get('PORT', '8000')], check=True)\""]
 
 
 
