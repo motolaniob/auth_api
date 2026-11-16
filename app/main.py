@@ -11,6 +11,7 @@ from app.routers import admin as admin_router
 from app.database import SessionLocal
 from app.models.role import Role
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Ensures the base "admin" and "user" roles exist on every app startup.
@@ -20,10 +21,16 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         if not db.query(Role).first():
-            db.add_all([
-                Role(name="admin", description="Administrator role with full access"),
-                Role(name="user", description="Regular user role with limited access"),
-            ])
+            db.add_all(
+                [
+                    Role(
+                        name="admin", description="Administrator role with full access"
+                    ),
+                    Role(
+                        name="user", description="Regular user role with limited access"
+                    ),
+                ]
+            )
             db.commit()
     finally:
         db.close()
@@ -31,13 +38,17 @@ async def lifespan(app: FastAPI):
     # (no shutdown cleanup needed currently)
 
 
-
-app = FastAPI(lifespan=lifespan,title="Auth API",
+app = FastAPI(
+    lifespan=lifespan,
+    title="Auth API",
     description="A full-featured authentication API with JWT, OAuth, MFA, and session management.",
-    version="1.0.0",)
+    version="1.0.0",
+)
 app.include_router(auth_router.router, prefix="/auth", tags=["auth"])
 app.include_router(users_router.router, prefix="/users", tags=["users"])
 app.include_router(admin_router.router, prefix="/admin", tags=["admin"])
+
+
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}

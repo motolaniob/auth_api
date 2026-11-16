@@ -3,14 +3,16 @@ from uuid import UUID
 from datetime import datetime
 from app.core.security import check_password_breach
 
+
 class UserCreate(BaseModel):
     email: EmailStr = Field(examples=["jane.doe@example.com"])
     password: str = Field(examples=["correct-horse-battery-staple"])
-    @field_validator('password')
+
+    @field_validator("password")
     @classmethod
     def password_strength(cls, v):
         if len(v) < 8:
-            raise ValueError('Password must be at least 8 characters long')
+            raise ValueError("Password must be at least 8 characters long")
         try:
             breached = check_password_breach(v) > 0
         except RuntimeError:
@@ -18,9 +20,10 @@ class UserCreate(BaseModel):
             # depend on a third-party service being up.
             breached = False
         if breached:
-            raise ValueError('Password has been breached')
+            raise ValueError("Password has been breached")
         return v
-    
+
+
 class UserResponse(BaseModel):
     id: UUID = Field(examples=["3fa85f64-5717-4562-b3fc-2c963f66afa6"])
     email: EmailStr = Field(examples=["jane.doe@example.com"])

@@ -21,6 +21,7 @@ import uuid
 
 router = APIRouter()
 
+
 @router.get("/users", response_model=list[UserResponse])
 def list_all_users(
     db: Session = Depends(get_db),
@@ -29,35 +30,45 @@ def list_all_users(
     """List every user account. Requires the admin role."""
     return db.query(User).all()
 
-@router.patch("/users/{user_id}/roles", response_model=UserResponse,
+
+@router.patch(
+    "/users/{user_id}/roles",
+    response_model=UserResponse,
     responses={
         400: {"description": "One or more of the given role names are invalid"},
         403: {"description": "Not an admin, or email not verified"},
-        404: {"description": "User not found"},})
-def update_user_roles(user_id:str, new_role_names:list[str], full_request: Request,db: Session = Depends(get_db),
-    current_user: User = Depends(require_role("admin")), _verified: User = Depends(require_verified)):
+        404: {"description": "User not found"},
+    },
+)
+def update_user_roles(
+    user_id: str,
+    new_role_names: list[str],
+    full_request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+    _verified: User = Depends(require_verified),
+):
     """
-        Replace a user's roles with the given list of role names.
-        Takes effect immediately: revokes user's refresh tokens
-        and bumps tokens_valid_after, so the change doesn't wait for the
-        user's current access token to expire naturally.
+    Replace a user's roles with the given list of role names.
+    Takes effect immediately: revokes user's refresh tokens
+    and bumps tokens_valid_after, so the change doesn't wait for the
+    user's current access token to expire naturally.
     """
     user = db.query(User).filter(User.id == uuid.UUID(user_id)).first()
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found."
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found."
         )
     old_roles = list(user.roles)
     # Fetch the new roles from the database
     new_roles = db.query(Role).filter(Role.name.in_(new_role_names)).all()
-    
+
     if len(new_roles) != len(new_role_names):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="One or more roles are invalid."
+            detail="One or more roles are invalid.",
         )
-    
+
     # Update the user's roles
     user.roles = new_roles
     # Revoking all refresh tokens (and bumping tokens_valid_after so existing
@@ -66,24 +77,54 @@ def update_user_roles(user_id:str, new_role_names:list[str], full_request: Reque
     user.tokens_valid_after = datetime.now(timezone.utc)
     db.commit()
     db.refresh(user)
-    
+
     # Revoke all refresh tokens for the user
     revoke_all_refresh_tokens(user.id, db)
-    log_audit_event(db, user.id, "role_changed", full_request.client.host, full_request.headers.get("user-agent") ,event_metadata= {"old_roles": [r.name for r in old_roles], "new_roles": new_role_names, "changed_by": str(current_user.id)})
+    log_audit_event(
+        db,
+        user.id,
+        "role_changed",
+        full_request.client.host,
+        full_request.headers.get("user-agent"),
+        event_metadata={
+            "old_roles": [r.name for r in old_roles],
+            "new_roles": new_role_names,
+            "changed_by": str(current_user.id),
+        },
+    )
     return user
 
 
-@router.post("/users/{user_id}/mfa/disable", response_model=MessageResponse, responses={403: {"description": "Not an admin"}, 404: {"description": "User not found"}})
-def admin_disable_mfa(user_id: str, full_request: Request,current_user: User = Depends(require_role("admin")), db: Session = Depends(get_db)):
+@router.post(
+    "/users/{user_id}/mfa/disable",
+    response_model=MessageResponse,
+    responses={
+        403: {"description": "Not an admin"},
+        404: {"description": "User not found"},
+    },
+)
+def admin_disable_mfa(
+    user_id: str,
+    full_request: Request,
+    current_user: User = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
     """Disable MFA for a given user on their behalf. Requires the admin role."""
-    user = db.query(User).filter(User.id== uuid.UUID(user_id)).first()
+    user = db.query(User).filter(User.id == uuid.UUID(user_id)).first()
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail = "User not found."
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found."
         )
     user.mfa_enabled = False
     user.mfa_secret = None
     db.query(RecoveryCode).filter(RecoveryCode.user_id == uuid.UUID(user_id)).delete()
     db.commit()
-    log_audit_event(db, user.id, "mfa_disabled_by_admin",  full_request.client.host, full_request.headers.get("user-agent") ,event_metadata = {"disabled_by_admin_id": str(current_user.id)})
+    log_audit_event(
+        db,
+        user.id,
+        "mfa_disabled_by_admin",
+        full_request.client.host,
+        full_request.headers.get("user-agent"),
+        event_metadata={"disabled_by_admin_id": str(current_user.id)},
+    )
     return {"message": "MFA is disabled"}

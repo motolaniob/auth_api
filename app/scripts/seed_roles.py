@@ -3,9 +3,9 @@ One-time seed script: ensures the base "admin" and "user" roles exist.
 Run manually (python -m app.scripts.seed_roles or similar) after setting
 up a fresh database — not invoked automatically by the app itself.
 """
+
 from app.models.role import Role
 from app.database import get_db
-from sqlalchemy.orm import Session
 
 db = get_db()
 current_roles = db.query(Role).all()

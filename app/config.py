@@ -7,6 +7,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+
 class Settings(BaseSettings):
     database_url: str
     test_database_url: str
@@ -20,6 +22,9 @@ class Settings(BaseSettings):
     google_redirect_uri: str
     app_base_url: str
 
-    model_config = SettingsConfigDict(env_file=BASE_DIR / ".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=BASE_DIR / ".env", env_file_encoding="utf-8", extra="ignore"
+    )
+
 
 settings = Settings()

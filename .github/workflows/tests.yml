@@ -48,7 +48,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
 
       - name: Configure test environment
         run: |
@@ -56,6 +56,12 @@ jobs:
           openssl genrsa -out keys/private_key.pem 2048
           openssl rsa -in keys/private_key.pem \
             -pubout -out keys/public_key.pem
+
+      - name: Lint with Ruff
+        run: ruff check .
+
+      - name: Check formatting
+        run: ruff format --check .
 
       - name: Run tests
         env:
