@@ -4,9 +4,9 @@
 
 A reusable authentication and authorization API built with **Python, FastAPI, PostgreSQL, and Redis**.
 
-I built this project to explore how production-oriented authentication systems work, with a focus on security, maintainability, and practical backend engineering.
+This project explores production-oriented authentication systems, with a focus on security, maintainability, and practical backend engineering.
 
-It implements authentication, authorization, token management, MFA, OAuth, session management, rate limiting, and security audit logging.
+It provides user authentication, role-based access control, token management, multi-factor authentication, OAuth, session management, rate limiting, and security audit logging.
 
 ## Features
 
@@ -29,7 +29,7 @@ It implements authentication, authorization, token management, MFA, OAuth, sessi
 
 ### OAuth
 - Google OAuth 2.0 authentication.
-- OAuth CSRF protection using short-lived, single-use Redis state tokens.
+- CSRF protection using short-lived, single-use Redis state tokens.
 - Account linking using verified email addresses.
 
 ### Authorization and session management
@@ -43,7 +43,7 @@ It implements authentication, authorization, token management, MFA, OAuth, sessi
 - Redis-backed rate limiting.
 - Protected routes using authentication dependencies.
 - Email verification requirements for sensitive operations.
-- Password hashing and token hashing.
+- Password and token hashing.
 - Access-token invalidation following security-sensitive account changes.
 
 ## Technology stack
@@ -61,15 +61,18 @@ It implements authentication, authorization, token management, MFA, OAuth, sessi
 | Resend | Transactional email delivery |
 | Google OAuth 2.0 | Third-party authentication |
 | pytest | Automated testing |
+| Ruff | Linting and formatting |
 | Docker | Application containerization |
+| GitHub Actions | CI testing and quality checks |
 
 ## Architecture
 
-The application follows a modular structure, separating API routes, business logic, database models, schemas, and shared security functionality.
+The application uses a modular structure that separates API routes, database models, schemas, and shared services.
 
 ```mermaid
 flowchart TD
     Client[Client] --> API[FastAPI Application]
+<<<<<<< HEAD
     API --> Auth[Authentication Router]
     API --> Users[Users Router]
     API --> Admin[Admin Router]
@@ -80,6 +83,22 @@ flowchart TD
     Admin --> DB
     Auth --> DB
     Auth --> Redis
+=======
+
+    API --> Auth[Authentication Router]
+    API --> Users[Users Router]
+    API --> Admin[Admin Router]
+
+    Auth --> Security[Security Utilities]
+    Auth --> Email[Email Services]
+    Auth --> RedisServices[Redis Services]
+
+    Auth --> DB[(PostgreSQL)]
+    Users --> DB
+    Admin --> DB
+
+    RedisServices --> Redis[(Redis)]
+>>>>>>> a5b110d (Additional Readme updates)
 ```
 
 ### Project structure
@@ -111,9 +130,7 @@ auth_api/
 |   +-- main.py
 |
 +-- tests/
-|
 +-- keys/
-|
 +-- docker-compose.yml
 +-- Dockerfile
 +-- .env.example
@@ -134,13 +151,12 @@ auth_api/
 
 ```bash
 git clone https://github.com/motolaniob/auth_api.git
-
 cd auth_api
 ```
 
 ### 2. Generate RSA signing keys
 
-The API uses RS256 for JWT signing, requiring a private and public RSA key pair.
+The API uses RS256 for JWT signing and requires a private and public RSA key pair.
 
 ```bash
 mkdir -p keys
@@ -204,10 +220,28 @@ The application seeds the default admin and user roles during startup when they 
 
 Once running:
 
-- API: http://localhost:8000
-- Interactive Swagger documentation: http://localhost:8000/docs
-- ReDoc documentation: http://localhost:8000/redoc
-- Health check: http://localhost:8000/health
+| Service | URL |
+|---|---|
+| API | http://localhost:8000 |
+| Swagger documentation | http://localhost:8000/docs |
+| ReDoc documentation | http://localhost:8000/redoc |
+| Health check | http://localhost:8000/health |
+
+## API documentation
+
+The API provides interactive documentation through Swagger UI.
+
+Visit [http://localhost:8000/docs](http://localhost:8000/docs) after starting the application to explore the available endpoints, request schemas, and response formats.
+
+### Swagger UI screenshots
+
+<!-- Add screenshots to docs/images/ and uncomment these when ready. -->
+
+<!--
+![Swagger UI endpoint overview](docs/images/swagger-overview.png)
+
+![Swagger UI authentication endpoint](docs/images/swagger-authentication.png)
+-->
 
 ## API endpoints
 
@@ -262,37 +296,40 @@ These endpoints require administrator authorization.
 | PATCH | `/users/{user_id}/roles` | Update user roles |
 | POST | `/users/{user_id}/mfa/disable` | Disable MFA for a user |
 
-For request schemas, response formats, and interactive API exploration, visit `/docs`.
-
 ## Security considerations
 
 ### Password security
+
 Passwords are hashed using Argon2 rather than stored in plaintext.
 
 New passwords are also checked against the Have I Been Pwned password database using its range-based API.
 
 ### JWT authentication
-The API uses RS256 asymmetric signing.
 
-The private key is used to issue tokens, while the public key is used for verification.
+The API uses RS256 asymmetric signing. The private key is used to issue tokens, while the public key is used for verification.
 
 ### Refresh-token security
+
 Refresh tokens are opaque values stored as SHA-256 hashes rather than plaintext.
 
 Tokens are rotated when refreshed, and revoked or expired refresh tokens are rejected.
 
-### MFA
+### Multi-factor authentication
+
 MFA uses time-based one-time passwords (TOTP), with single-use recovery codes for account recovery.
 
 MFA challenge tokens are restricted to the MFA verification flow and cannot be used as normal authenticated access tokens.
 
 ### Access-token invalidation
+
 A per-user `tokens_valid_after` timestamp allows previously issued access tokens to be invalidated following sensitive account operations, including password resets and role changes.
 
 ### OAuth protection
+
 Google OAuth uses short-lived, single-use state tokens stored in Redis to protect against cross-site request forgery.
 
 ### Rate limiting
+
 Redis-backed rate limiting helps protect public endpoints against brute-force attempts and excessive requests.
 
 ## Running tests
@@ -320,4 +357,4 @@ Potential areas for further development include:
 
 ## License
 
-Available for reference and educational purposes.
+No open-source license has been added yet. All rights are reserved by the copyright holder unless a license is subsequently provided.
