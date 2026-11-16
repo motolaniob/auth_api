@@ -24,13 +24,14 @@ from app.models.users import User
 from app.models.refresh_token import RefreshToken
 from app.models.audit_logs import AuditLog
 
-private_key = settings.private_key or Path(
-    settings.keys_directory / "private_key.pem"
-).read_text()
+private_key = (
+    settings.private_key
+    or Path(settings.keys_directory / "private_key.pem").read_text()
+)
 
-public_key = settings.public_key or Path(
-    settings.keys_directory / "public_key.pem"
-).read_text()
+public_key = (
+    settings.public_key or Path(settings.keys_directory / "public_key.pem").read_text()
+)
 # RS256 (asymmetric) instead of HS256: only this service holds the private
 # key needed to issue tokens, but any other service can verify tokens using
 # just the public key, without being able to forge new ones.
