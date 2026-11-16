@@ -1,5 +1,7 @@
 # Auth API
 
+![Tests](https://github.com/motolaniob/auth_api/actions/workflows/tests.yml/badge.svg)
+
 A reusable authentication and authorization API built with **Python, FastAPI, PostgreSQL, and Redis**.
 
 I built this project to explore how production-oriented authentication systems work, with a focus on security, maintainability, and practical backend engineering.
@@ -65,38 +67,19 @@ It implements authentication, authorization, token management, MFA, OAuth, sessi
 
 The application follows a modular structure, separating API routes, business logic, database models, schemas, and shared security functionality.
 
-```text
-Client
-  |
-  v
-FastAPI Application
-  |
-  +---- Authentication Router
-  |       |
-  |       +---- Registration / Login
-  |       +---- JWT / Refresh Tokens
-  |       +---- MFA
-  |       +---- Google OAuth
-  |       +---- Password Reset
-  |
-  +---- Users Router
-  |       |
-  |       +---- User Profile
-  |
-  +---- Admin Router
-  |       |
-  |       +---- User Management
-  |       +---- Role Management
-  |
-  +---- Core Services
-  |       |
-  |       +---- Security Utilities
-  |       +---- Email Services
-  |       +---- Redis Services
-  |
-  +---- PostgreSQL
-  |
-  +---- Redis
+```mermaid
+flowchart TD
+    Client[Client] --> API[FastAPI Application]
+    API --> Auth[Authentication Router]
+    API --> Users[Users Router]
+    API --> Admin[Admin Router]
+    Auth --> Security[Security Utilities]
+    Auth --> Email[Email Services]
+    Auth --> Redis[Redis Services]
+    Users --> DB[(PostgreSQL)]
+    Admin --> DB
+    Auth --> DB
+    Auth --> Redis
 ```
 
 ### Project structure
@@ -334,7 +317,6 @@ Potential areas for further development include:
 - Improved observability and structured logging.
 - Performance and concurrency testing.
 - Further hardening of authentication and session-management workflows.
-- Automated CI checks for linting, formatting, and test execution.
 
 ## License
 
