@@ -42,6 +42,8 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     # effect immediately instead of waiting for natural token expiry.
     if user.tokens_valid_after and (iat is None or iat < user.tokens_valid_after):
         raise credentials_exception
+    if payload.get("mfa_pending"):
+        raise HTTPException(status_code=401, detail="MFA")
     return user
 
 def require_role(required_role: str):
