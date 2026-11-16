@@ -4,3 +4,4 @@ venv/
 .env.docker
 *.pem
 __pycache__/
+.idea/
