@@ -59,7 +59,8 @@ def test_password_found_in_breach_list():
     with patch("app.core.security.requests.get", return_value=mock_response) as mock_get:
         count = check_password_breach(password)
         assert count == 42
-        mock_get.assert_called_once_with(f"https://api.pwnedpasswords.com/range/{prefix}")
+        mock_get.assert_called_once_with(f"https://api.pwnedpasswords.com/range/{prefix}",
+    timeout=(5, 10),)
 
 def test_password_not_found_in_breach_list():
     mock_response = Mock()

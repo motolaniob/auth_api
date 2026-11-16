@@ -44,6 +44,8 @@ from app.core.security import (
     hash_refresh_token, decode_access_token, give_user_tokens, log_audit_event)
 import pyotp
 
+HTTP_TIMEOUT = (5,10) # connect timeout, read timeout
+
 router = APIRouter()
 
 
@@ -71,12 +73,11 @@ def signup(user: UserCreate, full_request:Request, db: Session = Depends(get_db)
     
     hashed_password = hash_password(user.password)
     new_user = User(email=user.email.lower(), hashed_password=hashed_password)
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
+
     user_role = db.query(Role).filter(Role.name == "user").first()
     new_user.roles.append(user_role)
-    db.commit()
+    db.add(new_user)
+    db.flush()
 
     # Create an email verification token for the new user
     verification_token = generate_refresh_token()  # Reusing method from refresh tokens to generate a random token
@@ -87,6 +88,7 @@ def signup(user: UserCreate, full_request:Request, db: Session = Depends(get_db)
     )
     db.add(token_row)
     db.commit()
+    db.refresh(new_user)
     send_verification_email(new_user.email,verification_token)
     log_audit_event(db, new_user.id, "signup_successful",full_request.client.host,full_request.headers.get("user-agent"),)
     return new_user
@@ -285,7 +287,7 @@ def reset_password_form(token: str):
     Submits via JS as JSON to match the existing POST /auth/reset-password
     route's expected body, rather than a standard form-encoded POST.
     """
-    return f"""
+    return """
     <html>
         <body>
             <h2>Reset your password</h2>
@@ -295,19 +297,20 @@ def reset_password_form(token: str):
             </form>
             <p id="message"></p>
             <script>
-                document.getElementById("reset-form").addEventListener("submit", async function(e) {{
+                const token = new URLSearchParams(window.location.search).get("token");
+                document.getElementById("reset-form").addEventListener("submit", async function(e) {
                     e.preventDefault();
-                    const response = await fetch("/auth/reset-password", {{
+                    const response = await fetch("/auth/reset-password", {
                         method: "POST",
-                        headers: {{ "Content-Type": "application/json" }},
-                        body: JSON.stringify({{
-                            token: "{token}",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            token: token,
                             new_password: document.getElementById("new_password").value
-                        }})
-                    }});
+                        })
+                    });
                     const data = await response.json();
                     document.getElementById("message").innerText = data.detail || data.message;
-                }});
+                });
             </script>
         </body>
     </html>
@@ -334,7 +337,7 @@ def setup_mfa(current_user: User = Depends(get_current_user), db: Session = Depe
     recovery_codes =[generate_refresh_token()[0:10] for _ in range(8)] #reusing refresh token function to generate random 10 digit recovery codes
     for code in recovery_codes:
         db.add(RecoveryCode(user_id=current_user.id, code_hash=hash_refresh_token(code)))
-        db.commit()
+    db.commit()
     return {"secret": secret, "recovery_codes": recovery_codes, "provisioning_url": provisioning_url}
 
 # TURNING OFF MULTI-FACTOR AUTHENTICATION
@@ -443,27 +446,39 @@ def google_oauth_callback(full_request:Request,code: str = None, state: str = No
     # Check if there is an error or if state returned from Google is valid. If it is, remove from set.
     if error:
         raise HTTPException(status_code=400, detail=f"OAuth error: {error}")
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing authorization code")
     if not consume_oauth_state(state):
         raise HTTPException(status_code=400, detail="Invalid state")
     # Swap code for Google tokens
-    token_response = requests.post("https://oauth2.googleapis.com/token",data = {
-        "code": code,
-        "client_id": settings.google_client_id,
-        "client_secret": settings.google_client_secret,
-        "redirect_uri": settings.google_redirect_uri,
-        "grant_type": "authorization_code",
-    })
-    if token_response.status_code != 200:
-        raise HTTPException(status_code=400, detail="Failed to exchange authorization code")
+    try:
+        token_response = requests.post("https://oauth2.googleapis.com/token",data = {
+            "code": code,
+            "client_id": settings.google_client_id,
+            "client_secret": settings.google_client_secret,
+            "redirect_uri": settings.google_redirect_uri,
+            "grant_type": "authorization_code",
+        },timeout = HTTP_TIMEOUT,)
+        token_response.raise_for_status()
+    except requests.exceptions.Timeout:
+        raise HTTPException(status_code=504, detail="Google authentication service timed out")
+    except requests.exceptions.RequestException:
+        raise HTTPException(status_code=502, detail="Unable to communicate with Google authentication service")
     google_tokens = token_response.json()
-
+    access_token = google_tokens.get("access_token")
+    if not access_token:
+        raise HTTPException(status_code=400, detail="Invalid code")
     # Fetch User Profile and throw error if Gmail is not verified
-    userinfo_response = requests.get(
-        "https://www.googleapis.com/oauth2/v3/userinfo",
-        headers={"Authorization": f"Bearer {google_tokens['access_token']}"},
-    )
-    if userinfo_response.status_code != 200:
-        raise HTTPException(status_code=400, detail="Failed to fetch Google user info")
+    try:
+        userinfo_response = requests.get(
+            "https://www.googleapis.com/oauth2/v3/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"},timeout = HTTP_TIMEOUT,
+        )
+        userinfo_response.raise_for_status()
+    except requests.exceptions.Timeout:
+        raise HTTPException(status_code=504, detail="Google user information request timed out")
+    except requests.exceptions.RequestException:
+        raise HTTPException(status_code=502, detail="Unable to retrieve Google user information")
     profile = userinfo_response.json()
 
     if not profile.get("email_verified"):
@@ -482,7 +497,7 @@ def google_oauth_callback(full_request:Request,code: str = None, state: str = No
             is_new_user = True
             user = User(email =profile["email"].lower(), hashed_password = None, is_verified = True)
             db.add(user)
-            db.commit()
+            db.flush()
             db.refresh(user)
             user_role = db.query(Role).filter(Role.name == "user").first()
             user.roles.append(user_role)

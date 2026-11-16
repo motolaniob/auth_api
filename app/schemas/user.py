@@ -11,7 +11,13 @@ class UserCreate(BaseModel):
     def password_strength(cls, v):
         if len(v) < 8:
             raise ValueError('Password must be at least 8 characters long')
-        if check_password_breach(v) > 0:
+        try:
+            breached = check_password_breach(v) > 0
+        except RuntimeError:
+            # Fail open: HIBP is an advisory check, so signup shouldn't
+            # depend on a third-party service being up.
+            breached = False
+        if breached:
             raise ValueError('Password has been breached')
         return v
     

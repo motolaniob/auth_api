@@ -60,13 +60,18 @@ def check_password_breach(password: str) -> int:
     """Check if a password has been breached using the Have I Been Pwned API."""
     sha1_password = hashlib.sha1(password.encode('utf-8')).hexdigest().upper()
     prefix, suffix = sha1_password[:5], sha1_password[5:]
-    response = requests.get(f"https://api.pwnedpasswords.com/range/{prefix}")
-    
-    if response.status_code != 200:
-        # Fails closed: if HIBP is unreachable, signup/password-reset should
-        # error out rather than silently skip the breach check.
-        raise Exception("Error checking password breach status.")
-    
+    try:
+        response = requests.get(f"https://api.pwnedpasswords.com/range/{prefix}",timeout = (5,10),)
+        response.raise_for_status()
+    except requests.exceptions.Timeout:
+        raise RuntimeError(
+            "Password breach checking service timed out"
+        )
+
+    except requests.exceptions.RequestException:
+        raise RuntimeError(
+            "Unable to check password breach status"
+        )
     for line in response.text.splitlines():
         hash_suffix, count = line.split(':')
         if suffix == hash_suffix:
